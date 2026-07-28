@@ -513,9 +513,11 @@ struct PopoverView: View {
             Text(vm.outputName).font(.system(size: 9.5, weight: .medium)).foregroundStyle(.white.opacity(0.48))
                 .lineLimit(1).truncationMode(.tail)
             Spacer(minLength: 8)
+            #if !APP_STORE
             Image(systemName: vm.spotifyConnected ? "link.circle.fill" : "link.circle")
                 .font(.system(size: 11))
                 .foregroundStyle(vm.spotifyConnected ? Color(hex: 0x1DB954) : .white.opacity(0.28))
+            #endif
             Button { withAnimation(.smooth(duration: 0.25)) { showSettings.toggle() } } label: {
                 Image(systemName: showSettings ? "chevron.down" : "gearshape.fill")
                     .font(.system(size: 12))
@@ -533,11 +535,15 @@ struct PopoverView: View {
         VStack(spacing: 1) {
             languageRow
             Divider().overlay(.white.opacity(0.1)).padding(.vertical, 2)
+            // Spotify OAuth pre-fetch is not part of the App Store build, so its row is hidden
+            // there. Spotify itself still works via AppleScript (now-playing + transport).
+            #if !APP_STORE
             settingsRow(icon: vm.spotifyConnected ? "checkmark.seal.fill" : "music.note.list",
                         title: vm.spotifyConnected ? loc.t("Spotify Connected (pre-fetch)", "Spotify Bağlı (pre-fetch)")
                                                    : loc.t("Connect with Spotify…", "Spotify ile Bağlan…"),
                         tint: vm.spotifyConnected ? Color(hex: 0x1DB954) : .white,
                         action: vm.onConnectSpotify)
+            #endif
             settingsRow(icon: "lock.shield", title: loc.t("Test automation permissions", "Otomasyon izinlerini test et"), action: vm.onTestAutomation)
             settingsRow(icon: "play.rectangle", title: loc.t("Test YT Music access", "YT Music erişimini test et"), action: vm.onTestYTMusic)
             settingsRow(icon: vm.loginEnabled ? "checkmark.circle.fill" : "power",

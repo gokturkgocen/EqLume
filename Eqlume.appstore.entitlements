@@ -6,15 +6,14 @@
 	<string>3R9ULKMUXY.com.gokturkgocen.Eqlume</string>
 	<key>com.apple.developer.team-identifier</key>
 	<string>3R9ULKMUXY</string>
-	<key>keychain-access-groups</key>
-	<array>
-		<string>3R9ULKMUXY.com.gokturkgocen.Eqlume</string>
-	</array>
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
+	<!-- network.client: MusicBrainz + iTunes catalog lookups and album artwork.
+	     NOTE: network.server and keychain-access-groups are deliberately NOT here.
+	     They were only needed by the Spotify OAuth pre-fetch path (loopback HTTP
+	     listener + token storage), which is compiled out of the App Store build
+	     (`#if !APP_STORE`). Do not re-add them without re-adding that feature. -->
 	<key>com.apple.security.network.client</key>
-	<true/>
-	<key>com.apple.security.network.server</key>
 	<true/>
 	<key>com.apple.security.device.audio-input</key>
 	<true/>

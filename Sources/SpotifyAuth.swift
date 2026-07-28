@@ -1,3 +1,8 @@
+// Excluded from the Mac App Store build: the Spotify OAuth / Web API pre-fetch path
+// needs a loopback HTTP listener (network.server) and Keychain storage. The App Store
+// build ships neither entitlement, and Spotify still works there via AppleScript
+// (now-playing + transport) — only queue pre-fetch is unavailable.
+#if !APP_STORE
 import AppKit
 import CryptoKit
 import Foundation
@@ -215,3 +220,4 @@ private extension CharacterSet {
         return set
     }()
 }
+#endif

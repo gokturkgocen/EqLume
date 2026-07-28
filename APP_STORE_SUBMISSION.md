@@ -20,7 +20,7 @@ Localized product text is ready in `APP_STORE_METADATA.md`. Upload the three PNG
 
 Select **No, we do not collect data from this app**.
 
-Audio is processed in memory and never transmitted to the developer. Track and artist text may be sent directly from the user's Mac to MusicBrainz, Apple's iTunes Search API, or Spotify when the corresponding optional feature is used. The developer has no server receiving this information, and Eqlume includes no advertising, analytics, tracking SDK, or developer account system.
+Audio is processed in memory and never transmitted to the developer. Track and artist text may be sent directly from the user's Mac to MusicBrainz or Apple's iTunes Search API. The App Store flavor does not include Spotify OAuth/Web API pre-fetch. The developer has no server receiving this information, and Eqlume includes no advertising, analytics, tracking SDK, or developer account system.
 
 Use the public URL of `PRIVACY.md` as the Privacy Policy URL. Confirm that the published policy URL opens without login before submission.
 
@@ -30,7 +30,7 @@ Eqlume contains no objectionable, user-generated, gambling, medical, sexual, vio
 
 ## App Review information
 
-Use the review-notes draft in `APP_STORE_RELEASE.md`. Provide a monitored contact name, phone number, and email in App Store Connect. If Spotify testing requires credentials, place temporary reviewer instructions in the private review field, never in the public description or repository.
+Use the review-notes draft in `APP_STORE_RELEASE.md`. Provide a monitored contact name, phone number, and email in App Store Connect. Spotify testing in the App Store flavor does not require OAuth credentials.
 
 ## Files to upload
 
@@ -45,5 +45,5 @@ Use the review-notes draft in `APP_STORE_RELEASE.md`. Provide a monitored contac
 - Install the Apple Distribution and Mac Installer Distribution certificates.
 - Publish support, marketing, and privacy URLs.
 - Test the signed build on a clean Apple silicon Mac through TestFlight.
-- Verify Spotify OAuth and Music/Spotify/Chrome/Safari Automation in the sandboxed build.
+- Verify Music/Spotify/Chrome/Safari Automation in the sandboxed build; Spotify OAuth is intentionally absent from this flavor.
 - Verify first launch, permission denial, sleep/wake, headphone unplug/replug, and quit/reopen behavior.

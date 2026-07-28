@@ -9,7 +9,7 @@
     <key>CFBundleIdentifier</key>
     <string>com.gokturkgocen.Eqlume</string>
 	<key>CFBundleVersion</key>
-	<string>3</string>
+	<string>4</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
 	<key>NSHumanReadableCopyright</key>

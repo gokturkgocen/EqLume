@@ -75,7 +75,9 @@ final class StatusBarController: NSObject, NSWindowDelegate {
         vm.onPrevious      = { [weak self] in self?.transport(.previous) }
         vm.onPlayPause     = { [weak self] in self?.transport(.playPause) }
         vm.onNext          = { [weak self] in self?.transport(.next) }
+        #if !APP_STORE
         vm.onConnectSpotify = { [weak self] in self?.spotifyMenu() }
+        #endif
         vm.onTestAutomation = { [weak self] in self?.testPermissions() }
         vm.onTestYTMusic    = { [weak self] in self?.testYouTubeMusic() }
         vm.onToggleLogin    = { [weak self] in self?.toggleLoginItem() }
@@ -309,7 +311,9 @@ final class StatusBarController: NSObject, NSWindowDelegate {
         vm.nowTitle  = autoSelector.enabled ? (autoSelector.lastTitle ?? "") : ""
         vm.presetName = audio.activePreset.name
         vm.outputName = audio.outputDeviceName
+        #if !APP_STORE
         vm.spotifyConnected = autoSelector.spotifyAuth.isConnected
+        #endif
         vm.loginEnabled = (loginItem.status == .enabled)
 
         if lastCurvePreset != audio.activePreset.name {
@@ -402,6 +406,10 @@ final class StatusBarController: NSObject, NSWindowDelegate {
         }
     }
 
+    // MARK: Spotify OAuth connect flow — non-App-Store builds only
+    // (the App Store build ships no loopback-listener / Keychain entitlements)
+
+    #if !APP_STORE
     private func spotifyMenu() {
         let auth = autoSelector.spotifyAuth
         if auth.isConnected {
@@ -472,4 +480,5 @@ final class StatusBarController: NSObject, NSWindowDelegate {
             }
         }
     }
+    #endif  // !APP_STORE
 }

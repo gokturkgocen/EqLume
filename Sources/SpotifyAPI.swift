@@ -1,3 +1,8 @@
+// Excluded from the Mac App Store build: the Spotify OAuth / Web API pre-fetch path
+// needs a loopback HTTP listener (network.server) and Keychain storage. The App Store
+// build ships neither entitlement, and Spotify still works there via AppleScript
+// (now-playing + transport) — only queue pre-fetch is unavailable.
+#if !APP_STORE
 import Foundation
 
 /// Minimal Spotify Web API client. Only the endpoints we need for queue lookahead:
@@ -92,3 +97,4 @@ struct QueueSnapshot: Decodable {
     /// The track that will play after `currently_playing` ends.
     var nextTrack: SpotifyTrack? { queue.first }
 }
+#endif

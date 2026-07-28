@@ -92,6 +92,36 @@ fi
 
 xattr -rc "$APP_BUNDLE" 2>/dev/null || true
 
+# Preflight: the App Store build must ship only the minimum entitlements (App Review
+# guideline 2.4.5(i) — build 3 was rejected for carrying network.server with no matching
+# functionality). network.server and keychain-access-groups belong to the Spotify OAuth
+# pre-fetch path, which is compiled out via `#if !APP_STORE`; assert they are really gone,
+# that the entitlements we DO need survived, and that no CC BY-NC-SA model got bundled.
+if [[ "$BUILD_FLAVOR" == "appstore" ]]; then
+    SIGNED_ENTS=$(codesign -d --entitlements - --xml "$APP_BUNDLE" 2>/dev/null \
+                  | plutil -convert xml1 -o - - 2>/dev/null)
+    preflight_fail=0
+    for forbidden in "com.apple.security.network.server" "keychain-access-groups"; do
+        if grep -q "$forbidden" <<< "$SIGNED_ENTS"; then
+            echo "PREFLIGHT FAIL: '$forbidden' is present in the signed App Store build." >&2
+            preflight_fail=1
+        fi
+    done
+    for required in "com.apple.security.app-sandbox" "com.apple.security.network.client" \
+                    "com.apple.security.device.audio-input" "com.apple.security.automation.apple-events"; do
+        if ! grep -q "$required" <<< "$SIGNED_ENTS"; then
+            echo "PREFLIGHT FAIL: required entitlement '$required' is missing." >&2
+            preflight_fail=1
+        fi
+    done
+    if [ -e "$APP_BUNDLE/Contents/Resources/DiscogsEffNet.mlmodelc" ]; then
+        echo "PREFLIGHT FAIL: the CC BY-NC-SA Discogs-EffNet model must not ship in the App Store build." >&2
+        preflight_fail=1
+    fi
+    [ "$preflight_fail" -eq 0 ] || exit 1
+    echo "Preflight OK: no network.server / keychain-access-groups, required entitlements present, no bundled model."
+fi
+
 echo "Built: $APP_BUNDLE"
 
 if [[ "$BUILD_FLAVOR" == "install" ]]; then

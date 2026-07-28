@@ -23,8 +23,13 @@ final class AutoPresetSelector {
     private var genreClassifier: GenreClassifier?
     private var classifierLoadAttempted = false
 
+    // Spotify OAuth / Web API queue pre-fetch — not in the App Store build (needs a loopback
+    // listener + Keychain, i.e. entitlements that build deliberately doesn't ship). Spotify's
+    // AppleScript path (now-playing + transport) is unaffected and stays in every build.
+    #if !APP_STORE
     let spotifyAuth = SpotifyAuth()
     private lazy var spotifyAPI = SpotifyAPI(auth: spotifyAuth)
+    #endif
 
     private var task: Task<Void, Never>?
     private var lastTrackIdentity: String?
@@ -221,10 +226,13 @@ final class AutoPresetSelector {
         let sourceBundle = AudioSourceMonitor.currentSourceBundleID()
 
         // Spotify + Web API path — prefer this when available; gives us queue lookahead.
+        // Absent in the App Store build; Spotify falls through to the AppleScript path below.
+        #if !APP_STORE
         if sourceBundle == "com.spotify.client" && spotifyAuth.isConnected {
             await tickSpotifyAPI()
             return
         }
+        #endif
 
         // YouTube Music in a browser → try DOM-scraping path for queue lookahead.
         if let browser = Self.ytMusicBrowsers.first(where: { $0.1 == sourceBundle })?.0 {
@@ -297,8 +305,9 @@ final class AutoPresetSelector {
         }
     }
 
-    // MARK: - Spotify Web API path (with pre-fetch)
+    // MARK: - Spotify Web API path (with pre-fetch) — non-App-Store builds only
 
+    #if !APP_STORE
     private func tickSpotifyAPI() async {
         guard let snapshot = await spotifyAPI.currentlyPlaying(),
               let item = snapshot.item
@@ -365,6 +374,8 @@ final class AutoPresetSelector {
             nextTrackID = nil; nextTrackPreset = nil; nextTrackInfo = nil
         }
     }
+
+    #endif  // !APP_STORE — end of Spotify Web API pre-fetch path
 
     // MARK: - AppleScript path (reactive)
 

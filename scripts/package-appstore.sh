@@ -6,7 +6,11 @@ cd "$(dirname "$0")/.."
 PROFILE="${PROVISIONING_PROFILE:-}"
 SIGN_ID="${SIGN_ID:-Apple Distribution}"
 APP="build/Eqlume-AppStore.app"
-PKG="build/Eqlume-1.0-build-3.pkg"
+# Derive the package name from Info.plist instead of hardcoding it — a stale build number
+# here silently produces a mislabelled upload (it said "build-3" while shipping build 4).
+APP_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist)"
+APP_BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' Info.plist)"
+PKG="build/Eqlume-${APP_VERSION}-build-${APP_BUILD}.pkg"
 
 if [[ -z "$PROFILE" || ! -f "$PROFILE" ]]; then
     echo "Set PROVISIONING_PROFILE to the downloaded Mac App Store provisioning profile."
@@ -36,6 +40,18 @@ SIGNED_ENTITLEMENTS="$(codesign -d --entitlements :- "$APP" 2>/dev/null)"
     echo "Signed application identifier does not match the provisioning profile."
     exit 1
 }
+for forbidden in "com.apple.security.network.server" "keychain-access-groups"; do
+    if [[ "$SIGNED_ENTITLEMENTS" == *"$forbidden"* ]]; then
+        echo "Forbidden entitlement remains after distribution signing: $forbidden"
+        exit 1
+    fi
+done
+
+BIN="$APP/Contents/MacOS/Eqlume-AppStore"
+if strings "$BIN" | grep -qE "38123|api\.spotify\.com|SpotifyOAuthServer"; then
+    echo "Spotify OAuth implementation remains in the App Store binary."
+    exit 1
+fi
 
 INSTALLER_ID="${INSTALLER_ID:-3rd Party Mac Developer Installer}"
 if ! security find-identity -v | grep -Fq "$INSTALLER_ID"; then

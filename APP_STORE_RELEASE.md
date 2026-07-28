@@ -6,7 +6,7 @@ This document tracks the App Store-specific distribution path. The open-source b
 
 - [x] App Sandbox entitlements are separated from development entitlements.
 - [x] The Core Audio process tap and private aggregate device pass a sandboxed runtime probe.
-- [x] Outgoing network and local OAuth callback server entitlements are declared.
+- [x] Outgoing network access is declared; the Spotify OAuth callback server is compiled out of the App Store flavor.
 - [x] Apple Events targets are explicitly listed for review.
 - [x] The development-only `get-task-allow` entitlement is absent from the App Store build.
 - [x] The CC BY-NC-SA Discogs-EffNet model and derived label data are excluded from the App Store bundle.
@@ -14,9 +14,9 @@ This document tracks the App Store-specific distribution path. The open-source b
 - [x] Privacy policy and third-party notices are reachable from the app.
 - [x] App category, copyright, and export-compliance metadata are declared.
 - [ ] Apple Events behavior must be exercised with Spotify, Music, Chrome, and Safari under sandbox.
-- [ ] Spotify OAuth must be exercised end-to-end under sandbox.
-- [ ] A Mac App Distribution provisioning profile for `com.gokturkgocen.Eqlume` must be created.
-- [ ] The final archive must be signed with Apple Distribution and uploaded to App Store Connect.
+- [x] Spotify OAuth, Web API pre-fetch, and Keychain token storage are absent from the App Store flavor.
+- [x] A Mac App Distribution provisioning profile for `com.gokturkgocen.Eqlume` has been created.
+- [x] Build 4 is signed with Apple Distribution and uploaded to App Store Connect.
 
 Run the automated local checks with:
 
@@ -63,7 +63,7 @@ Create the App ID and Mac App Distribution profile in the Apple Developer portal
 
 Eqlume is a menu-bar-only system equalizer. Click the waveform icon in the menu bar to open the interface. The app uses Apple's public Core Audio process tap API to process system audio in memory. Audio is neither saved nor uploaded. For safety, equalization engages only when the built-in 3.5 mm headphone output is active and bypasses other outputs.
 
-Automatic preset selection optionally reads now-playing metadata from supported media apps. Network catalog lookups send artist and track text to MusicBrainz or Apple's iTunes Search API. Spotify integration is optional and uses credentials supplied by the reviewer or user. The App Store build does not include the third-party Discogs-EffNet classifier.
+Automatic preset selection optionally reads now-playing metadata from supported media apps. Network catalog lookups send artist and track text to MusicBrainz or Apple's iTunes Search API. Spotify now-playing and transport integration uses AppleScript; the OAuth/Web API queue pre-fetch feature is not included in the App Store flavor. The App Store build does not include the third-party Discogs-EffNet classifier.
 
 The temporary Apple Events exceptions enable now-playing and transport integration with these explicit targets: Apple Music, Spotify, Chrome, and Safari. All integrations are user initiated and remain optional.
 
