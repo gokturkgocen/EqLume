@@ -183,15 +183,67 @@ final class AudioEngine {
     private func shouldProcessForCurrentDevice() -> Bool {
         guard let id = try? getDefaultOutputDeviceID() else { return false }
 
-        // Eqlume is purpose-built for one combo: MacBook 3.5mm headphone jack + Moondrop Chu II.
-        // EQ is enabled ONLY when that exact path is active. For everything else (built-in
-        // speakers, AirPods, other wireless, USB DACs, anything we haven't tuned for) we
-        // bypass entirely so Apple's own DSP / the device's native sound is preserved.
+        // The built-in 3.5 mm jack is the combo this app was measured for → always on,
+        // with the Chu II correction.
         if outputIsBuiltinHeadphoneJack(id) {
+            activeProfile = .chuII
             return true
         }
-        bypassReason = "\(outputDeviceName) — EQ bypass (Chu II 3.5mm jack dışında işlemiyor)"
+
+        // Built-in speakers stay off: Apple's own DSP already tunes them.
+        if outputIsBuiltinSpeaker(id) {
+            bypassReason = L.t("\(outputDeviceName) — EQ off (Apple's own speaker DSP is left alone)",
+                               "\(outputDeviceName) — EQ kapalı (Apple'ın hoparlör DSP'sine dokunulmuyor)")
+            return false
+        }
+
+        // Any other output (HDMI/DisplayPort monitor with speakers, USB DAC, Bluetooth …)
+        // is opt-in per device. Once enabled it runs the DESKTOP SPEAKER profile — never the
+        // in-ear correction, since that curve does not transfer to another transducer.
+        if let uid = try? getDeviceUID(id), DeviceEQPolicy.isAllowed(uid: uid) {
+            activeProfile = .desktopSpeakers
+            return true
+        }
+
+        bypassReason = L.t("\(outputDeviceName) — EQ off (enable it for this output in settings)",
+                           "\(outputDeviceName) — EQ kapalı (ayarlardan bu çıkış için aç)")
         return false
+    }
+
+    // MARK: Per-device profile
+
+    /// Baseline correction that matches the output currently being processed.
+    /// Set by `shouldProcessForCurrentDevice()`; changing it re-applies the active preset
+    /// so the curve follows the device without rebuilding the audio graph.
+    private(set) var activeProfile: OutputProfile = .chuII {
+        didSet { if activeProfile != oldValue { applyPreset() } }
+    }
+
+    /// The active preset with the current device's baseline folded in — what actually
+    /// reaches the EQ node, and what the UI should draw as the response curve.
+    var resolvedPreset: EQPreset { activePreset.resolved(baseline: activeProfile.baseline) }
+
+    /// True when the CURRENT default output is eligible for the per-device opt-in switch
+    /// (i.e. not the built-in jack, which is always on, and not the built-in speakers).
+    var currentOutputSupportsOptIn: Bool {
+        guard let id = try? getDefaultOutputDeviceID() else { return false }
+        return !outputIsBuiltinHeadphoneJack(id) && !outputIsBuiltinSpeaker(id)
+    }
+
+    /// Whether the user has enabled EQ for the current output device.
+    var currentOutputAllowed: Bool {
+        guard let id = try? getDefaultOutputDeviceID(),
+              let uid = try? getDeviceUID(id) else { return false }
+        return DeviceEQPolicy.isAllowed(uid: uid)
+    }
+
+    /// Toggle the opt-in for the current output device and reconcile immediately.
+    func setCurrentOutputAllowed(_ allowed: Bool) {
+        guard let id = try? getDefaultOutputDeviceID(),
+              let uid = try? getDeviceUID(id) else { return }
+        DeviceEQPolicy.setAllowed(allowed, uid: uid)
+        if isRunning { stopCore() }   // rebuild against the new decision
+        reconcile()
     }
 
     // MARK: Start
@@ -329,7 +381,7 @@ final class AudioEngine {
         // Allocate a fixed maximum so we can switch between presets of different band counts
         // without rebuilding the audio graph. Unused bands are bypassed.
         let eqNode = AVAudioUnitEQ(numberOfBands: AudioEngine.maxBands)
-        configureEQ(eqNode, with: activePreset)
+        configureEQ(eqNode, with: resolvedPreset)
         self.eq = eqNode
 
         // Peak limiter at 0 dBFS guards against clipping from EQ boost.
@@ -485,7 +537,8 @@ final class AudioEngine {
 
     private func applyPreset() {
         guard let eq else { return }
-        configureEQ(eq, with: activePreset)
+        // Resolved: the genre delta plus whatever baseline the ACTIVE OUTPUT calls for.
+        configureEQ(eq, with: resolvedPreset)
         limiter?.bypass = bypassed
     }
 

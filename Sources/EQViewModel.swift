@@ -18,6 +18,14 @@ final class EQViewModel: ObservableObject {
     /// matching; shown to the user via `presetDisplayName` (localized).
     @Published var presetName = EQPreset.flat.name
     @Published var outputName = "—"
+    /// Per-device opt-in state for the CURRENT output (see DeviceEQPolicy). The switch is
+    /// only offered when the output isn't the built-in jack (always on) or the built-in
+    /// speakers (never processed).
+    @Published var canOptInCurrentOutput = false
+    @Published var currentOutputAllowed = false
+    /// True when the active output runs the desktop-speaker profile (rather than the
+    /// built-in jack's Chu II in-ear correction).
+    @Published var usingSpeakerProfile = false
     @Published var spotifyConnected = false
     @Published var loginEnabled = false
 
@@ -27,6 +35,9 @@ final class EQViewModel: ObservableObject {
     @Published var detectionSourceKind: DetectionSourceKind? = nil
     @Published var detectionStatus: DetectionStatus = .idle
     @Published var detectionSourceApp: String = ""
+    #if !APP_STORE
+    @Published var genreLabelOverride: String? = nil
+    #endif
     @Published var artwork: NSImage?
     @Published var artworkAccent: Color?
 
@@ -40,7 +51,12 @@ final class EQViewModel: ObservableObject {
     let presets: [EQPreset] = EQPreset.builtIn
 
     /// Localized display name of the active preset (English default / Turkish selectable).
-    var presetDisplayName: String { EQPreset.displayName(forName: presetName) }
+    var presetDisplayName: String {
+        #if !APP_STORE
+        if let genreLabelOverride { return genreLabelOverride }
+        #endif
+        return EQPreset.displayName(forName: presetName)
+    }
 
     /// Localized "· <source>" label for the genre line (MusicBrainz / catalog / analyzing …).
     var detectionSource: String { detectionSourceKind?.label ?? "" }
@@ -71,6 +87,7 @@ final class EQViewModel: ObservableObject {
     var onTestYTMusic: () -> Void = {}
     var onToggleLogin: () -> Void = {}
     var onSetLanguage: (AppLanguage) -> Void = { _ in }
+    var onToggleCurrentOutput: () -> Void = {}
     var onOpenPrivacy: () -> Void = {}
     var onOpenLicenses: () -> Void = {}
     var onQuit: () -> Void = {}

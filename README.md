@@ -3,7 +3,7 @@
 ![Platform](https://img.shields.io/badge/platform-macOS%2026-000000?logo=apple&logoColor=white)
 ![Arch](https://img.shields.io/badge/arch-Apple%20Silicon-555)
 ![Swift](https://img.shields.io/badge/Swift-F05138?logo=swift&logoColor=white)
-[![Latest release](https://img.shields.io/github/v/release/gokturkgocen/SesEQ)](https://github.com/gokturkgocen/SesEQ/releases/latest)
+[![Latest release](https://img.shields.io/github/v/release/gokturkgocen/Eqlume)](https://github.com/gokturkgocen/Eqlume/releases/latest)
 [![License](https://img.shields.io/badge/license-MIT%20(code)-blue)](LICENSE)
 [![Built with Claude Code](https://img.shields.io/badge/built%20with-Claude%20Code-D97757?logo=anthropic&logoColor=white)](https://claude.com/claude-code)
 
@@ -37,8 +37,21 @@ Eqlume is a lightweight menu-bar app that applies a real, transparent equalizer 
 - **Genre-reactive UI**: the popover's accent color follows the active preset family (rock red, EDM blue, metal chrome, …) and animates on genre change.
 - **Transport controls** (previous / play-pause / next) that route to whichever player is currently producing audio — Spotify, Apple Music, or YouTube Music.
 - **On-device audio-content classifier** (a CoreML model) as a fallback when catalog lookups can't identify a track — nothing about your listening is sent anywhere for classification.
-- **Smart device gating**: the EQ only engages on the built-in 3.5 mm headphone jack and gets out of the way everywhere else.
+- **Per-output profiles**: the built-in 3.5 mm jack gets the in-ear correction; other outputs (e.g. desk speakers on a monitor) are opt-in per device and get a desktop-speaker baseline instead. Built-in speakers are left to Apple's own DSP.
 - A peak limiter at 0 dBFS sits after the EQ to catch any transient from an EQ boost.
+
+## How it compares
+
+| | **Eqlume** | eqMac | SoundSource | Boom 3D |
+|---|---|---|---|---|
+| Picks the preset for you (per-track genre detection) | **✅** | ❌ | ❌ | ❌ |
+| System-wide EQ | ✅ | ✅ | ✅ | ✅ |
+| No virtual audio driver / kernel extension | **✅** (Core Audio process tap) | ❌ | ❌ | ❌ |
+| Works fully on-device | ✅ | ✅ | ✅ | ✅ |
+| Open source | **✅** (MIT, app code) | ✅ | ❌ | ❌ |
+| Price | **Free** | Free / paid tiers | Paid | Paid |
+
+The differentiator is the first row: other equalizers give you bands and presets to manage — Eqlume identifies what's playing and applies a matching curve on its own.
 
 ## How it works
 
@@ -46,7 +59,11 @@ Eqlume is a lightweight menu-bar app that applies a real, transparent equalizer 
 
 **Audio path.** Eqlume creates a global Core Audio process tap (`muteBehavior = .muted`) plus a private aggregate device. The tapped system audio is fed through an `AVAudioUnitEQ` node and played back to the real output device. Because it uses the public Core Audio tap API, there's no virtual driver or kernel extension to install.
 
-**Where the EQ applies.** The EQ is active **only when you're listening through the built-in 3.5 mm headphone jack** (`transport = BuiltIn` and data source `hdpn`). On the built-in speakers, AirPods, any Bluetooth device, or a USB DAC, Eqlume automatically bypasses itself and leaves Apple's own DSP untouched. On Apple Silicon the speakers and the headphone jack share one device ID, so Eqlume watches the Core Audio data-source property to react correctly to plugging and unplugging.
+**Where the EQ applies — and with which baseline.** Correction curves are not transferable between transducers, so Eqlume picks one per output:
+
+- **Built-in 3.5 mm headphone jack** → always on, with the Chu II → Harman in-ear correction. On Apple Silicon the speakers and the jack share one device ID, so Eqlume watches the Core Audio data-source property to react correctly to plugging and unplugging.
+- **Built-in speakers** → never processed; Apple's own DSP already tunes them.
+- **Any other output** (monitor speakers over HDMI, USB DAC, Bluetooth …) → **opt-in per device** from the settings panel, remembered by device UID. Once enabled it uses the **desktop-speaker** baseline (tames the sub hump and the 200 Hz desk/cabinet boxiness, lifts the recessed presence region) instead of the in-ear one — an IEC-711 coupler correction has nothing to do with a speaker radiating into a room.
 
 **How it picks a preset.** For each track, automatic mode resolves a genre in this order:
 
@@ -68,7 +85,7 @@ Now-playing information comes from Spotify (Web API, with optional queue pre-fet
 
 ## Download
 
-Grab the latest `Eqlume-macos.zip` from [Releases](https://github.com/gokturkgocen/SesEQ/releases), unzip it, and move `Eqlume.app` to `/Applications`.
+Grab the latest `Eqlume-macos.zip` from [Releases](https://github.com/gokturkgocen/Eqlume/releases), unzip it, and move `Eqlume.app` to `/Applications`.
 
 The app is ad-hoc signed (no paid Apple Developer account), so macOS Gatekeeper will block it on first launch. To open it once:
 
@@ -88,8 +105,8 @@ You only need to do this once. Prefer to build it yourself? See below.
 Eqlume builds with plain `swiftc` — there's no Xcode project to open.
 
 ```bash
-git clone https://github.com/gokturkgocen/SesEQ.git
-cd SesEQ
+git clone https://github.com/gokturkgocen/Eqlume.git
+cd Eqlume
 ./build.sh install      # builds and copies Eqlume.app to /Applications
 ```
 

@@ -534,6 +534,10 @@ struct PopoverView: View {
     private var settingsPanel: some View {
         VStack(spacing: 1) {
             languageRow
+            if vm.canOptInCurrentOutput {
+                Divider().overlay(.white.opacity(0.1)).padding(.vertical, 2)
+                currentOutputRow
+            }
             Divider().overlay(.white.opacity(0.1)).padding(.vertical, 2)
             // Spotify OAuth pre-fetch is not part of the App Store build, so its row is hidden
             // there. Spotify itself still works via AppleScript (now-playing + transport).
@@ -557,6 +561,31 @@ struct PopoverView: View {
         }
         .padding(7)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+    }
+
+    /// Per-device opt-in for the current output (monitor speakers, USB DAC, …). Hidden for
+    /// the built-in jack (always on) and the built-in speakers (never processed).
+    private var currentOutputRow: some View {
+        HStack(spacing: 9) {
+            Image(systemName: vm.currentOutputAllowed ? "checkmark.circle.fill" : "hifispeaker")
+                .font(.system(size: 11))
+                .foregroundStyle(vm.currentOutputAllowed ? accent : .white)
+                .frame(width: 16)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(loc.t("EQ on this output", "Bu çıkışta EQ"))
+                    .font(.system(size: 11.5)).foregroundStyle(.white.opacity(0.95))
+                Text(vm.currentOutputAllowed
+                     ? loc.t("Desktop-speaker correction + genre presets", "Masa hoparlörü düzeltmesi + tür presetleri")
+                     : vm.outputName)
+                    .font(.system(size: 9)).foregroundStyle(.white.opacity(0.45))
+                    .lineLimit(1).truncationMode(.tail)
+            }
+            Spacer(minLength: 8)
+            Toggle("", isOn: Binding(get: { vm.currentOutputAllowed },
+                                     set: { _ in vm.onToggleCurrentOutput() }))
+                .labelsHidden().toggleStyle(.switch).tint(accent).scaleEffect(0.8)
+        }
+        .padding(.horizontal, 8).padding(.vertical, 5)
     }
 
     /// Language selector: English (default) / Türkçe.

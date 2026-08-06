@@ -25,9 +25,31 @@ MIT for the app's own code; the bundled ML model is CC BY-NC-SA 4.0 (see LICENSE
 - Captures system audio via **Core Audio process tap** (`muteBehavior = .muted`) + a private
   **aggregate device**, runs it through **AVAudioUnitEQ**, plays back through the real output
   device. No virtual driver / kernel extension (works with just a free Apple ID).
-- **EQ is active ONLY on the built-in 3.5mm headphone jack** (`hdpn` data source). Built-in
-  speakers, AirPods, any Bluetooth, USB DACs → auto-bypass (Apple's own DSP is left alone).
-  Logic in `CoreAudioHelpers.outputIsBuiltinHeadphoneJack` + `AudioEngine.shouldProcessForCurrentDevice`.
+- **Which outputs get EQ'd — three tiers** (`AudioEngine.shouldProcessForCurrentDevice`):
+  1. **Built-in 3.5mm jack** (`hdpn` data source) → always on, `OutputProfile.chuII`
+     (the Chu II → Harman in-ear correction). This is the measured combo.
+  2. **Built-in speakers** (`ispk`) → never processed; Apple's own DSP is left alone.
+  3. **Any other output** (HDMI/DisplayPort monitor speakers, USB DAC, Bluetooth …) →
+     **opt-in per device**, keyed by Core Audio device UID in `DeviceEQPolicy`
+     (UserDefaults `Eqlume.enabledOutputDeviceUIDs`, stable across reconnects). Once
+     enabled it runs `OutputProfile.desktopSpeakers`.
+- **Baseline is per-device, and that is the whole point** (`OutputProfile` in
+  `OutputProfile.swift`): music presets store ONLY their genre delta and set
+  `usesDeviceBaseline = true`; `EQPreset.resolved(baseline:)` folds in the profile's baseline
+  before the preset reaches the EQ node. `.chuII` → `chuIIBaseline`;
+  `.desktopSpeakers` → `desktopSpeakerBaseline` (small 2.1 desk set: trim sub-45 Hz the sub
+  can't play, tame the 80 Hz one-note hump and the 200 Hz cabinet/desk boxiness, small 500 Hz
+  body fill, +2.5 dB at 3 kHz for the off-axis vocal recession, +2 dB air shelf — class-typical
+  faults, not a measurement of one model; tune by ear from there). Never apply the Chu II
+  in-ear correction to a speaker — an IEC-711 coupler correction does not transfer to a
+  transducer radiating into a room. `flat` and `voice` are standalone
+  (`usesDeviceBaseline = false`) and behave identically everywhere.
+  Caveat to fix if it ever matters: the opt-in list is one flat set, so ANY opted-in
+  non-jack device gets the speaker baseline — a USB DAC + headphones would get the wrong
+  curve. Add a per-device profile picker at that point, not before.
+  `AudioEngine.resolvedPreset` is what the EQ and the drawn curve must both use; the curve
+  cache key includes the profile (`StatusBarController.curveKey`) because one preset name
+  resolves to different curves on different devices.
 - **Muted-tap teardown INVARIANT (do not break):** the tap is a *global* `muteBehavior = .muted`
   tap — while it exists it silences the whole system except Eqlume. So teardown must be bulletproof:
   `teardownAudioResources()` is idempotent and NEVER guarded by `isRunning`; `startCore()` is
@@ -109,6 +131,18 @@ fallback). `buildAppleScript(for:runningJS:)` is the shared injector for both re
   Fix: `.voice` may only win if the **single top style** is itself a voice style; otherwise fall
   back to the best non-voice (music) family. Genuine voice still reachable via comm-app bundle
   mapping and catalog genre hints. Don't widen `.voice` membership without re-checking this.
+- **Local classifier confidence guard** (`!APP_STORE`): Discogs families are uneven in size, so
+  the local build scores only each family's three strongest styles (weighted 1/0.5/0.25) instead
+  of letting a large family accumulate hundreds of weak activations. `World` may not win merely
+  by aggregation when its style is not individually on top, and low-confidence/low-margin results
+  keep the neutral preset and display `Genre uncertain` / `Tür belirlenemedi`. Local catalog tags
+  `arabesk`, `türk halk`, and `turkish folk` use the acoustic profile instead of the World bucket.
+  These behavior changes are compiled out of the App Store flavor.
+- **Apple `Worldwide` is not a genre** (`!APP_STORE`): iTunes files many Turkish releases under
+  the storefront bucket `World`/`Worldwide` (verified with Azer Bülbül — “Alıştım”). The local
+  catalog path rejects those generic values. A deliberately small, normalized list of canonical
+  arabesk/fantezi artists resolves to the local-only `Arabesk / Fantezi` profile instead; unknown
+  artists fall through to audio analysis rather than being mislabeled as World.
 - **Title cleaning** (`cleanMusicTitle`, NowPlayingProviders.swift) strips tempo/edit variant tags
   (`slowed`, `sped up`, `nightcore`, `reverb`, `8d`, `bass boosted`, remaster/remix/live/…) inside
   ( )/[ ] before catalog lookup, so variant titles match the original recording's genre.
@@ -167,5 +201,7 @@ Menu-bar icon opens an `NSPopover` hosting `PopoverView` (SwiftUI via `NSHosting
 ## Status
 
 Functionally complete incl. genre-themed SwiftUI UI with live spectrum + EQ curve. All components
-validated. Open future ideas (not started): album-art in now-playing card, per-device profiles for
-non-Chu-II headphones, user master bass/mid/treble trim.
+validated. Per-device opt-in + neutral profile shipped (see "Which outputs get EQ'd"), so
+non-Chu-II outputs (e.g. monitor-fed desk speakers) can be EQ'd with genre deltas only.
+Open future ideas (not started): album-art in now-playing card, user master bass/mid/treble trim,
+a measured baseline for a specific speaker set (currently neutral = no baseline).

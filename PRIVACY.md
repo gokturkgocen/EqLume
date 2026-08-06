@@ -32,7 +32,7 @@ Eqlume does not retain audio recordings or maintain a developer-accessible user 
 
 Questions and privacy requests can be submitted through the public project support page:
 
-https://github.com/gokturkgocen/SesEQ/issues
+https://github.com/gokturkgocen/Eqlume/issues
 
 ## Changes
 

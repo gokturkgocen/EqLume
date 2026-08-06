@@ -39,11 +39,11 @@ Eqlume currently applies its tuned correction when using the Mac's built-in 3.5 
 
 **Keywords:** equalizer,audio,music,sound,EQ,headphones,spectrum,menubar,preset
 
-**Support URL:** https://github.com/gokturkgocen/SesEQ/issues
+**Support URL:** https://github.com/gokturkgocen/Eqlume/issues
 
-**Marketing URL:** https://github.com/gokturkgocen/SesEQ
+**Marketing URL:** https://github.com/gokturkgocen/Eqlume
 
-**Privacy URL:** https://github.com/gokturkgocen/SesEQ/blob/main/PRIVACY.md
+**Privacy URL:** https://github.com/gokturkgocen/Eqlume/blob/main/PRIVACY.md
 
 ## Türkçe
 

@@ -17,7 +17,7 @@ final class StatusBarController: NSObject, NSWindowDelegate {
     private var clickMonitor: Any?
     private let spectrum = SpectrumAnalyzer()
     private var displayTimer: Timer?
-    private var lastCurvePreset: String = ""
+    private var lastCurveKey: String = ""
     private var lastLoadedArtURL: String?
 
     private let presetDefaultsKey = "Eqlume.activePresetName"
@@ -82,13 +82,18 @@ final class StatusBarController: NSObject, NSWindowDelegate {
         vm.onTestYTMusic    = { [weak self] in self?.testYouTubeMusic() }
         vm.onToggleLogin    = { [weak self] in self?.toggleLoginItem() }
         vm.onSetLanguage    = { [weak self] lang in self?.setLanguage(lang) }
+        vm.onToggleCurrentOutput = { [weak self] in
+            guard let self else { return }
+            self.audio.setCurrentOutputAllowed(!self.audio.currentOutputAllowed)
+            self.syncVM()
+        }
         vm.onOpenPrivacy    = { Self.openProjectPage("PRIVACY.md") }
         vm.onOpenLicenses   = { Self.openProjectPage("THIRD-PARTY.md") }
         vm.onQuit           = { NSApplication.shared.terminate(nil) }
     }
 
     private static func openProjectPage(_ path: String) {
-        guard let url = URL(string: "https://github.com/gokturkgocen/SesEQ/blob/main/\(path)") else { return }
+        guard let url = URL(string: "https://github.com/gokturkgocen/Eqlume/blob/main/\(path)") else { return }
         NSWorkspace.shared.open(url)
     }
 
@@ -289,11 +294,19 @@ final class StatusBarController: NSObject, NSWindowDelegate {
     }
 
     private func recomputeCurve() {
-        let preset = audio.activePreset
+        // Draw the RESOLVED preset: the curve must show the baseline actually in use for the
+        // current output (Chu II correction on the jack, genre delta only on other devices).
+        let preset = audio.resolvedPreset
         vm.responseDB = FrequencyResponse.responseDB(
             bands: preset.bands, globalGainDB: preset.globalGainDB,
             sampleRate: 48000, freqs: vm.freqs)
-        lastCurvePreset = preset.name
+        lastCurveKey = curveKey
+    }
+
+    /// Cache key for the drawn curve. Includes the profile because the same preset name
+    /// resolves to a different curve on a different output device.
+    private var curveKey: String {
+        "\(audio.activePreset.name)|\(audio.activeProfile)"
     }
 
     private func syncVM() {
@@ -309,14 +322,20 @@ final class StatusBarController: NSObject, NSWindowDelegate {
         vm.detectionSourceKind = autoSelector.enabled ? autoSelector.lastSourceKind : nil
         vm.nowArtist = autoSelector.enabled ? (autoSelector.lastArtist ?? "") : ""
         vm.nowTitle  = autoSelector.enabled ? (autoSelector.lastTitle ?? "") : ""
+        #if !APP_STORE
+        vm.genreLabelOverride = autoSelector.enabled ? autoSelector.lastGenreLabelOverride : nil
+        #endif
         vm.presetName = audio.activePreset.name
         vm.outputName = audio.outputDeviceName
+        vm.canOptInCurrentOutput = audio.currentOutputSupportsOptIn
+        vm.currentOutputAllowed = audio.currentOutputAllowed
+        vm.usingSpeakerProfile = audio.isRunning && audio.activeProfile == .desktopSpeakers
         #if !APP_STORE
         vm.spotifyConnected = autoSelector.spotifyAuth.isConnected
         #endif
         vm.loginEnabled = (loginItem.status == .enabled)
 
-        if lastCurvePreset != audio.activePreset.name {
+        if lastCurveKey != curveKey {
             recomputeCurve()
         }
         loadArtworkIfChanged()

@@ -53,9 +53,9 @@ The script deliberately stops before changing or uploading anything in App Store
 - Primary category: Utilities
 - Version: `1.0`
 - SKU suggestion: `EQLUME-MAC-001`
-- Privacy policy: `https://github.com/gokturkgocen/SesEQ/blob/main/PRIVACY.md`
-- Support URL: `https://github.com/gokturkgocen/SesEQ/issues`
-- Marketing URL: `https://github.com/gokturkgocen/SesEQ`
+- Privacy policy: `https://github.com/gokturkgocen/Eqlume/blob/main/PRIVACY.md`
+- Support URL: `https://github.com/gokturkgocen/Eqlume/issues`
+- Marketing URL: `https://github.com/gokturkgocen/Eqlume`
 
 Create the App ID and Mac App Distribution profile in the Apple Developer portal before producing the final package. No suitable macOS provisioning profile was installed during the July 21, 2026 preflight.
 

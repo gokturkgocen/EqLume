@@ -69,7 +69,14 @@ enum PresetCategory: String, CaseIterable {
 struct EQPreset: Codable, Equatable, Identifiable {
     var id: String { name }
     var name: String
+    /// The preset's own filters. When `usesDeviceBaseline` is true these are ONLY the
+    /// genre delta — the active output device's baseline correction is prepended by
+    /// `resolved(baseline:)` before the preset reaches the EQ node.
     var bands: [EQBand]
+    /// True for music presets, which sit on top of a per-device baseline (Chu II
+    /// correction on the built-in jack, neutral/none on other allowed outputs).
+    /// False for standalone presets (flat, voice) whose filters are absolute.
+    var usesDeviceBaseline: Bool = false
     var categoryRaw: String
 
     /// Constant gain (dB) added to the EQ output to compensate for the average
@@ -94,11 +101,26 @@ struct EQPreset: Codable, Equatable, Identifiable {
     /// catches the rare peak that crosses 0 dBFS.
     var globalGainDB: Float { preampOffsetDB + makeupGainDB }
 
-    init(name: String, category: PresetCategory, bands: [EQBand], makeupGainDB: Float = 0) {
+    init(name: String, category: PresetCategory, bands: [EQBand],
+         usesDeviceBaseline: Bool = false, makeupGainDB: Float = 0) {
         self.name = name
         self.categoryRaw = category.rawValue
         self.bands = bands
+        self.usesDeviceBaseline = usesDeviceBaseline
         self.makeupGainDB = makeupGainDB
+    }
+
+    /// Returns the preset with the given device baseline folded in, ready for the EQ node.
+    /// Standalone presets (flat, voice) are returned unchanged. Resolving keeps `bands`,
+    /// `preampOffsetDB` and `globalGainDB` correct for the device actually in use —
+    /// applying the Chu II in-ear correction to, say, desk speakers would be wrong, so a
+    /// non-headphone output resolves against an empty baseline (genre delta only).
+    func resolved(baseline: [EQBand]) -> EQPreset {
+        guard usesDeviceBaseline else { return self }
+        var copy = self
+        copy.bands = baseline + bands
+        copy.usesDeviceBaseline = false   // already folded in; don't apply twice
+        return copy
     }
 }
 
@@ -134,7 +156,7 @@ struct EQPreset: Codable, Equatable, Identifiable {
 // their dB gains sum); the genre delta is relative seasoning, not a replacement.
 // Speech / dialogue is a separate path (Harman music target doesn't apply there).
 
-private let chuIIBaseline: [EQBand] = [
+let chuIIBaseline: [EQBand] = [
     ls(105,   -3.5, q: 0.70),
     pk(68,    +2.0, q: 0.90),
     pk(170,   -3.0, q: 0.90),
@@ -144,12 +166,42 @@ private let chuIIBaseline: [EQBand] = [
     hs(10000, -2.0, q: 0.70),   // ← cut (not boost): Chu 2 has excess upper treble
 ]
 
-/// Helper: returns a preset = Chu II baseline + optional genre delta.
+// MARK: - Desktop 2.1 speaker baseline
+//
+// For a small desk-top 2.1 set (satellites + subwoofer, e.g. Logitech Z-series) fed from a
+// monitor's audio out. NOT a measurement of one specific model — these are the failure modes
+// the whole class shares, so the correction is deliberately gentle and errs toward cutting:
+//
+//   - Sub can't reproduce below ~45 Hz; feeding it that content only makes it flap and
+//     distort → low shelf trims it away (cleaner, not thinner).
+//   - Small subs have a one-note hump around 70–90 Hz → slight cut so bass has pitch
+//     instead of a single boom.
+//   - Small plastic cabinets plus reflection off the desk pile up around 180–250 Hz —
+//     this is the "boxy / cardboard" coloration, and the single most audible fault.
+//   - Satellites usually sit below ear level and off-axis, so the 2.5–4 kHz presence
+//     region drops; vocals sound recessed. Lifting it is what makes the biggest
+//     perceived improvement.
+//   - Small full-range drivers roll off above ~10 kHz → a modest shelf restores air.
+//
+// Boosts are capped at +2.5 dB, so `preampOffsetDB` only costs ~2.5 dB of headroom.
+// If it ends up too lean or too forward for your room, adjust by ear from here.
+let desktopSpeakerBaseline: [EQBand] = [
+    ls(45,    -2.0, q: 0.70),   // below the sub's usable range — remove, don't boost
+    pk(80,    -2.0, q: 0.90),   // one-note sub hump
+    pk(200,   -3.0, q: 1.00),   // cabinet + desk-boundary boxiness  ← most audible fix
+    pk(500,   +1.0, q: 0.90),   // a little body back into the satellites
+    pk(3000,  +2.5, q: 1.00),   // presence: off-axis vocal recession  ← biggest gain
+    hs(10000, +2.0, q: 0.70),   // air lost to the small drivers' roll-off
+]
+
+/// Helper: a music preset carrying ONLY its genre delta. The device baseline (Chu II
+/// correction on the built-in jack, empty on other allowed outputs) is prepended later by
+/// `EQPreset.resolved(baseline:)`, so the same preset works correctly on both.
 /// No makeup gain — the volume drop from the Harman bass-cut is intentional;
 /// keeping headroom means the limiter never compresses transients, so dynamics
 /// stay pristine. User can compensate at the system volume control.
 private func chu(_ name: String, _ category: PresetCategory, delta: [EQBand] = []) -> EQPreset {
-    EQPreset(name: name, category: category, bands: chuIIBaseline + delta)
+    EQPreset(name: name, category: category, bands: delta, usesDeviceBaseline: true)
 }
 
 // MARK: - Built-in presets
@@ -216,6 +268,15 @@ extension EQPreset {
     // MARK: Acoustic / Classical
 
     static let acoustic = chu("Akustik / Folk / Country", .acoustic)
+    #if !APP_STORE
+    /// Local-build profile for Turkish arabesk/fantezi recordings. It keeps the shared
+    /// Chu II correction, adds a little vocal/bağlama body, and softens upper-mid glare.
+    static let arabesk = chu("Arabesk / Fantezi", .acoustic, delta: [
+        pk(250,  +1.0, q: 0.8),
+        pk(1800, +1.0, q: 1.0),
+        pk(4500, -0.8, q: 1.2),
+    ])
+    #endif
     static let jazz     = chu("Jazz", .acoustic)
 
     static let classical = chu("Klasik / Orkestral", .acoustic, delta: [

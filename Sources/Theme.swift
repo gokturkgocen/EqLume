@@ -53,6 +53,9 @@ enum Theme {
 
     /// Map an active preset name to its family (for theming). Falls back to idle.
     static func family(forPresetName name: String) -> PresetFamily? {
+        #if !APP_STORE
+        if name == EQPreset.arabesk.name { return .acoustic }
+        #endif
         for f in PresetFamily.allCases where f.preset.name == name { return f }
         return nil
     }

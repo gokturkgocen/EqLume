@@ -43,11 +43,19 @@ final class AutoPresetSelector {
     private(set) var lastSourceApp: String?          // "YT Music (Chrome)", "Spotify", "Apple Music" …
     private(set) var lastSourceKind: DetectionSourceKind?
     private(set) var lastStatus: DetectionStatus = .idle
+    #if !APP_STORE
+    /// UI-only label used when the local classifier cannot make a trustworthy choice.
+    /// The neutral preset remains active instead of presenting a fabricated genre.
+    private(set) var lastGenreLabelOverride: String?
+    #endif
 
     /// Record a resolved now-playing track structurally so the view can localize it.
     private func markResolved(app: String, artist: String, title: String, kind: DetectionSourceKind?) {
         lastSourceApp = app; lastArtist = artist; lastTitle = title
         lastSourceKind = kind; lastStatus = .playing
+        #if !APP_STORE
+        lastGenreLabelOverride = nil
+        #endif
     }
 
     /// Pre-fetched preset for whatever Spotify/YT Music will play after the current track.
@@ -115,6 +123,9 @@ final class AutoPresetSelector {
         lastDetection = "—"
         lastArtist = nil; lastTitle = nil; lastSourceApp = nil
         lastSourceKind = nil; lastStatus = .idle
+        #if !APP_STORE
+        lastGenreLabelOverride = nil
+        #endif
         onStatusChange?()
     }
 
@@ -126,6 +137,11 @@ final class AutoPresetSelector {
     /// Returns nil when the catalog can't confidently resolve → caller defers to
     /// the audio-content classifier. Used for both now-playing and prefetch.
     private func catalogPreset(artist: String, title: String, genreHint: String?) async -> (EQPreset, String)? {
+        #if !APP_STORE
+        if Self.isKnownArabeskArtist(artist) {
+            return (.arabesk, "[Arabesk]")
+        }
+        #endif
         if let g = genreHint, !g.isEmpty {
             return (mapGenreToPreset(g), "[\(g)]")
         }
@@ -157,10 +173,49 @@ final class AutoPresetSelector {
         }
         if let hit = await genreLookup.lookup(artist: artist, title: title),
            artistNamesRoughlyMatch(hit.matchedArtist, artist) {
+            #if !APP_STORE
+            // Apple's storefront taxonomy returns "World"/"Worldwide" for many Turkish
+            // releases. That is a broad sales category, not a usable musical genre.
+            let normalizedGenre = hit.genre.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if normalizedGenre == "world" || normalizedGenre == "worldwide"
+                || normalizedGenre == "world music" {
+                return nil
+            }
+            #endif
             return (mapGenreToPreset(hit.genre), "[\(hit.genre)]")
         }
         return nil
     }
+
+    #if !APP_STORE
+    /// Apple commonly files classic Turkish arabesk/fantezi under the generic
+    /// "Worldwide" storefront bucket. Keep a small, explicit local correction list
+    /// rather than pretending every Turkish artist belongs to the same genre.
+    private static func isKnownArabeskArtist(_ artist: String) -> Bool {
+        let normalized = artist
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "tr_TR"))
+            .lowercased()
+            .unicodeScalars
+            .filter { CharacterSet.alphanumerics.contains($0) }
+            .map(String.init)
+            .joined()
+        return knownArabeskArtists.contains(normalized)
+    }
+
+    private static let knownArabeskArtists: Set<String> = [
+        "azerbulbul",
+        "bergen",
+        "cengizkurtoglu",
+        "ferditayfur",
+        "gullu",
+        "hakantasiyan",
+        "ibrahimtatlises",
+        "kamuranakkor",
+        "kibariye",
+        "muslumgurses",
+        "orhangencebay",
+    ]
+    #endif
 
     /// Splits "Artist - Title" on the first dash separator (" - ", " – ", " — ").
     /// Returns nil when there's no clear separator or either side is too short.
@@ -198,8 +253,23 @@ final class AutoPresetSelector {
             let result = await Task.detached(priority: .userInitiated) {
                 clf.classify(samples: samples, inputRate: rate)
             }.value
-            guard !Task.isCancelled, self.lastTrackIdentity == identity, let r = result else { return }
+            guard !Task.isCancelled, self.lastTrackIdentity == identity else { return }
+            #if !APP_STORE
+            guard let r = result, r.isReliable else {
+                self.applyIfChanged(.natural)
+                self.lastGenreLabelOverride = L.t("Genre uncertain", "Tür belirlenemedi")
+                self.lastDetection = "\(prefix) [analysis uncertain] → \(EQPreset.natural.name)"
+                self.lastSourceKind = .analyzed
+                self.onStatusChange?()
+                return
+            }
+            #else
+            guard let r = result else { return }
+            #endif
             self.applyIfChanged(r.family.preset)
+            #if !APP_STORE
+            self.lastGenreLabelOverride = nil
+            #endif
             self.lastDetection = String(format: "%@ [%@ · %.0f%%] → %@",
                                         prefix, r.topStyle, r.confidence * 100, r.family.preset.name)
             self.lastSourceKind = .analyzed   // artist/title/app already set when analysis was scheduled
@@ -489,6 +559,10 @@ final class AutoPresetSelector {
         // Blues
         if raw.contains("blues")                                             { return .blues }
         // Acoustic / Folk / Country / Singer-songwriter / Americana / Bluegrass
+        #if !APP_STORE
+        if raw.contains("arabesk") || raw.contains("türk halk")
+            || raw.contains("turkish folk")                                { return .acoustic }
+        #endif
         if raw.contains("acoustic") || raw.contains("folk")
             || raw.contains("country") || raw.contains("singer-songwriter")
             || raw.contains("bluegrass") || raw.contains("americana")        { return .acoustic }
@@ -550,6 +624,13 @@ final class AutoPresetSelector {
         var tally = [Int: Int]()   // rule index → summed vote count
         for wg in genres {
             let g = wg.name.lowercased()
+            #if !APP_STORE
+            if g.contains("arabesk") || g.contains("türk halk") || g.contains("turkish folk"),
+               let idx = genreKeywordRules.firstIndex(where: { $0.0.name == EQPreset.acoustic.name }) {
+                tally[idx, default: 0] += wg.count
+                continue
+            }
+            #endif
             for (idx, rule) in genreKeywordRules.enumerated() where rule.1.contains(where: { g.contains($0) }) {
                 tally[idx, default: 0] += wg.count
                 break   // first matching rule wins for this tag

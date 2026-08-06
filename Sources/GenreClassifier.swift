@@ -17,8 +17,9 @@ final class GenreClassifier {
     /// Result of a classification pass.
     struct Result {
         let family: PresetFamily
-        let confidence: Float        // share of summed probability the winning family holds
+        let confidence: Float        // share of aggregate evidence the winning family holds
         let topStyle: String         // most probable individual style (for display)
+        let isReliable: Bool         // false means the UI should avoid forcing a genre
     }
 
     init?(resourceDir: URL) {
@@ -91,12 +92,32 @@ final class GenreClassifier {
         for i in 0..<400 { summed[i] /= Float(n) }
 
         // Aggregate probabilities into preset families.
+        //
+        // The local (non-App-Store) build deliberately uses a bounded top-style score
+        // instead of summing every label in a family. Discogs' taxonomy is very uneven:
+        // "Folk, World, & Country" contains many more labels than some other families.
+        // A raw sum therefore lets that large bucket win on accumulated low-probability
+        // noise, which mislabeled acoustic rock as "World Music".
         var familyScore: [PresetFamily: Float] = [:]
         var total: Float = 0
+        #if !APP_STORE
+        var activationsByFamily: [PresetFamily: [Float]] = [:]
+        for i in 0..<400 {
+            activationsByFamily[families[i], default: []].append(summed[i])
+        }
+        for (family, activations) in activationsByFamily {
+            let top = activations.sorted(by: >).prefix(3)
+            let weights: [Float] = [1.0, 0.5, 0.25]
+            let score = zip(top, weights).reduce(Float.zero) { $0 + $1.0 * $1.1 }
+            familyScore[family] = score
+            total += score
+        }
+        #else
         for i in 0..<400 {
             familyScore[families[i], default: 0] += summed[i]
             total += summed[i]
         }
+        #endif
 
         // Single most-probable Discogs style (and its family).
         var topIdx = 0
@@ -115,8 +136,13 @@ final class GenreClassifier {
         // fall back to the best MUSIC family.
         var chosenFamily = sumWinner
         var chosenScore = sumWinnerScore
-        if sumWinner == .voice && topFamily != .voice {
-            if let (fam, score) = familyScore.filter({ $0.key != .voice })
+        var shouldRejectAggregateWinner = sumWinner == .voice && topFamily != .voice
+        #if !APP_STORE
+        shouldRejectAggregateWinner = shouldRejectAggregateWinner
+            || (sumWinner == .world && topFamily != .world)
+        #endif
+        if shouldRejectAggregateWinner {
+            if let (fam, score) = familyScore.filter({ $0.key != sumWinner })
                                              .max(by: { $0.value < $1.value }) {
                 chosenFamily = fam
                 chosenScore = score
@@ -124,7 +150,25 @@ final class GenreClassifier {
         }
 
         let confidence = total > 0 ? chosenScore / total : 0
-        return Result(family: chosenFamily, confidence: confidence, topStyle: styles[topIdx])
+        #if !APP_STORE
+        let runnerUpScore = familyScore
+            .filter { $0.key != chosenFamily }
+            .map(\.value)
+            .max() ?? 0
+        let margin = total > 0 ? (chosenScore - runnerUpScore) / total : 0
+        // World is intentionally held to a stricter bar because it is the model's
+        // broadest catch-all family. Other families still need a clear lead.
+        let isReliable: Bool
+        if chosenFamily == .world {
+            isReliable = topFamily == .world && confidence >= 0.16 && margin >= 0.025
+        } else {
+            isReliable = confidence >= 0.11 && margin >= 0.012
+        }
+        #else
+        let isReliable = true
+        #endif
+        return Result(family: chosenFamily, confidence: confidence,
+                      topStyle: styles[topIdx], isReliable: isReliable)
     }
 
     private func runModel(patch: [Float]) -> [Float]? {
