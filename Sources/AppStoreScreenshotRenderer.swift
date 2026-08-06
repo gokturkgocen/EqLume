@@ -21,9 +21,9 @@ enum AppStoreScreenshotRenderer {
     static func renderAll() {
         UserDefaults.standard.set(true, forKey: StatusBarController.onboardingKey)
         let scenes = [
-            Scene(fileName: "01-follows-your-music", eyebrow: "AUTOMATIC EQ", title: "Your music, in its best light.", subtitle: "Eqlume follows every track and shapes your Mac’s sound in real time.", preset: EQPreset.edm.name, track: "Neon Horizon", artist: "Eqlume Sessions", accent: Color(hex: 0x6C63FF), spectrumSeed: 3, automatic: true),
-            Scene(fileName: "02-see-the-sound", eyebrow: "LIVE VISUALS", title: "See what your music feels like.", subtitle: "A responsive spectrum and EQ curve make every adjustment beautifully clear.", preset: EQPreset.rock.name, track: "Midnight Drive", artist: "Eqlume Sessions", accent: Color(hex: 0xFF4D8D), spectrumSeed: 7, automatic: false),
-            Scene(fileName: "03-private-by-design", eyebrow: "PRIVATE BY DESIGN", title: "Your audio stays on your Mac.", subtitle: "No recording, no behavioral tracking — just native, real-time processing.", preset: EQPreset.jazz.name, track: "After Hours", artist: "Eqlume Sessions", accent: Color(hex: 0x21C7A8), spectrumSeed: 11, automatic: true),
+            Scene(fileName: "01-follows-your-music", eyebrow: "AUTOMATIC EQ", title: "Your music, in its best light.", subtitle: "EqLume follows every track and shapes your Mac’s sound in real time.", preset: EQPreset.edm.name, track: "Neon Horizon", artist: "EqLume Sessions", accent: Color(hex: 0x6C63FF), spectrumSeed: 3, automatic: true),
+            Scene(fileName: "02-see-the-sound", eyebrow: "LIVE VISUALS", title: "See what your music feels like.", subtitle: "A responsive spectrum and EQ curve make every adjustment beautifully clear.", preset: EQPreset.rock.name, track: "Midnight Drive", artist: "EqLume Sessions", accent: Color(hex: 0xFF4D8D), spectrumSeed: 7, automatic: false),
+            Scene(fileName: "03-private-by-design", eyebrow: "PRIVATE BY DESIGN", title: "Your audio stays on your Mac.", subtitle: "No recording, no behavioral tracking — just native, real-time processing.", preset: EQPreset.jazz.name, track: "After Hours", artist: "EqLume Sessions", accent: Color(hex: 0x21C7A8), spectrumSeed: 11, automatic: true),
         ]
 
         let output = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
@@ -119,7 +119,7 @@ enum AppStoreScreenshotRenderer {
                     VStack(alignment: .leading, spacing: 0) {
                         HStack(spacing: 10) {
                             Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 42, height: 42)
-                            Text("Eqlume").font(.system(size: 26, weight: .bold, design: .rounded))
+                            Text("EqLume").font(.system(size: 26, weight: .bold, design: .rounded))
                         }
                         .padding(.bottom, 72)
 

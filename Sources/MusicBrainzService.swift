@@ -14,7 +14,7 @@ import Foundation
 /// Two requests per artist (search → detail), cached. MusicBrainz requires a descriptive
 /// User-Agent and asks clients to stay ≤ ~1 req/s, which the throttle below honours.
 actor MusicBrainzService {
-    private static let userAgent = "Eqlume/1.0 ( https://github.com/gokturkgocen/Eqlume )"
+    private static let userAgent = "EqLume/1.0 ( https://github.com/gokturkgocen/EqLume )"
     private static let base = "https://musicbrainz.org/ws/2"
 
     struct WeightedGenre { let name: String; let count: Int }

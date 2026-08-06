@@ -2,7 +2,7 @@ import Foundation
 
 /// Preserves local choices when upgrading from the original SesEQ development name.
 /// The old domain and Keychain records are intentionally left intact so the migration
-/// is reversible while Eqlume establishes its own preferences.
+/// is reversible while EqLume establishes its own preferences.
 enum LegacyMigration {
     private static let marker = "Eqlume.didMigrateFromSesEQ"
 

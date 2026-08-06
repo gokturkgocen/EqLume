@@ -254,7 +254,7 @@ final class AudioEngine {
 
         // Exception safety: if ANY step below throws after the tap/aggregate are created,
         // tear them down before propagating. A global muted tap left alive by a half-finished
-        // start silences the ENTIRE system until Eqlume quits (the bug this guards against —
+        // start silences the ENTIRE system until EqLume quits (the bug this guards against —
         // e.g. a device hot-plug mid-start makes aggregate/IOProc creation fail).
         var started = false
         defer { if !started { teardownAudioResources() } }
@@ -270,7 +270,7 @@ final class AudioEngine {
         let tapUUID = UUID()
         tapDesc.uuid = tapUUID
         tapDesc.muteBehavior = .muted
-        tapDesc.name = "Eqlume"
+        tapDesc.name = "EqLume"
 
         var newTapID = AudioObjectID(kAudioObjectUnknown)
         try caCheck(
@@ -309,7 +309,7 @@ final class AudioEngine {
         // 4. Create a private aggregate device that includes the tap + output sub-device.
         //    Tap list MUST be specified at creation time (Apple bug: adding later returns zeroes).
         let aggDesc: [String: Any] = [
-            kAudioAggregateDeviceNameKey: "Eqlume-Aggregate",
+            kAudioAggregateDeviceNameKey: "EqLume-Aggregate",
             kAudioAggregateDeviceUIDKey: UUID().uuidString,
             kAudioAggregateDeviceMainSubDeviceKey: outputUID,
             kAudioAggregateDeviceIsPrivateKey: true,
@@ -507,7 +507,7 @@ final class AudioEngine {
         isRunning = false
         // Always tear down — do NOT early-return on `!isRunning`. A start that threw partway
         // leaves `isRunning == false` while the muted tap is still alive; only an unconditional
-        // teardown clears that orphaned tap (otherwise the Mac stays muted until Eqlume quits).
+        // teardown clears that orphaned tap (otherwise the Mac stays muted until EqLume quits).
         teardownAudioResources()
         if wasRunning { onStateChange?() }
     }

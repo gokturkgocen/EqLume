@@ -1,6 +1,6 @@
-# Eqlume ML pipeline — audio-content genre classifier
+# EqLume ML pipeline — audio-content genre classifier
 
-Offline pipeline that produces the catalog-independent genre classifier Eqlume uses
+Offline pipeline that produces the catalog-independent genre classifier EqLume uses
 when Spotify/iTunes lookup fails (obscure tracks not in any catalog).
 
 ## What it produces (already bundled into the app under `../Resources/`)

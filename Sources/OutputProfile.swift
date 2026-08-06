@@ -2,7 +2,7 @@ import Foundation
 
 /// Which baseline correction applies to the output device currently in use.
 ///
-/// Eqlume's genre presets are a small delta (±1–4 dB) layered on a baseline. Which
+/// EqLume's genre presets are a small delta (±1–4 dB) layered on a baseline. Which
 /// baseline is correct depends entirely on the transducer:
 ///
 ///   - `.chuII` — the built-in 3.5 mm headphone jack, the combo this app was measured

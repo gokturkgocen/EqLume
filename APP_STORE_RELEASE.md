@@ -1,4 +1,4 @@
-# Eqlume Mac App Store Release
+# EqLume Mac App Store Release
 
 This document tracks the App Store-specific distribution path. The open-source build and its existing installation flow remain unchanged.
 
@@ -41,7 +41,7 @@ After downloading the provisioning profile and installing Apple's distribution
 certificates, create the upload package with:
 
 ```bash
-PROVISIONING_PROFILE="/path/to/Eqlume.provisionprofile" ./scripts/package-appstore.sh
+PROVISIONING_PROFILE="/path/to/EqLume.provisionprofile" ./scripts/package-appstore.sh
 ```
 
 The script deliberately stops before changing or uploading anything in App Store Connect.
@@ -53,15 +53,15 @@ The script deliberately stops before changing or uploading anything in App Store
 - Primary category: Utilities
 - Version: `1.0`
 - SKU suggestion: `EQLUME-MAC-001`
-- Privacy policy: `https://github.com/gokturkgocen/Eqlume/blob/main/PRIVACY.md`
-- Support URL: `https://github.com/gokturkgocen/Eqlume/issues`
-- Marketing URL: `https://github.com/gokturkgocen/Eqlume`
+- Privacy policy: `https://github.com/gokturkgocen/EqLume/blob/main/PRIVACY.md`
+- Support URL: `https://github.com/gokturkgocen/EqLume/issues`
+- Marketing URL: `https://github.com/gokturkgocen/EqLume`
 
 Create the App ID and Mac App Distribution profile in the Apple Developer portal before producing the final package. No suitable macOS provisioning profile was installed during the July 21, 2026 preflight.
 
 ## Review notes draft
 
-Eqlume is a menu-bar-only system equalizer. Click the waveform icon in the menu bar to open the interface. The app uses Apple's public Core Audio process tap API to process system audio in memory. Audio is neither saved nor uploaded. For safety, equalization engages only when the built-in 3.5 mm headphone output is active and bypasses other outputs.
+EqLume is a menu-bar-only system equalizer. Click the waveform icon in the menu bar to open the interface. The app uses Apple's public Core Audio process tap API to process system audio in memory. Audio is neither saved nor uploaded. For safety, equalization engages only when the built-in 3.5 mm headphone output is active and bypasses other outputs.
 
 Automatic preset selection optionally reads now-playing metadata from supported media apps. Network catalog lookups send artist and track text to MusicBrainz or Apple's iTunes Search API. Spotify now-playing and transport integration uses AppleScript; the OAuth/Web API queue pre-fetch feature is not included in the App Store flavor. The App Store build does not include the third-party Discogs-EffNet classifier.
 

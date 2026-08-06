@@ -1,17 +1,17 @@
 # THIRD-PARTY NOTICES
 
-Eqlume is distributed under the MIT License (see `LICENSE`), which covers **only the
+EqLume is distributed under the MIT License (see `LICENSE`), which covers **only the
 original source code authored by Göktürk Göcen** (the `Sources/*.swift` files,
 `build.sh`, the `ml-pipeline/*.py` scripts, and other first-party files in this
 repository).
 
-Eqlume also **bundles and depends on third-party components** that are **not** covered
+EqLume also **bundles and depends on third-party components** that are **not** covered
 by that MIT License. Those components remain under their own licenses, and their terms
 govern over the MIT License wherever they apply. This file documents each third-party
 component, its authors, its license, and the obligations it imposes.
 
 > **IMPORTANT — the distributed application is effectively NON-COMMERCIAL.**
-> Eqlume bundles the Discogs-EffNet machine-learning model, which is licensed under
+> EqLume bundles the Discogs-EffNet machine-learning model, which is licensed under
 > **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International
 > (CC BY-NC-SA 4.0)**. Because a compiled derivative of that model
 > (`Resources/DiscogsEffNet.mlmodelc`) is redistributed as part of the app binary, the
@@ -86,7 +86,7 @@ part of the **Essentia** open-source audio-analysis library
 and Xavier Serra (MusiCNN).
 
 **License / relationship:** The Essentia library is distributed under the
-**GNU Affero General Public License v3 (AGPL-3.0)**. Eqlume does **not** link against,
+**GNU Affero General Public License v3 (AGPL-3.0)**. EqLume does **not** link against,
 include, or redistribute Essentia or any Essentia source code — the Swift
 implementation is an **independent, from-scratch reimplementation** of the documented
 mel recipe (Accelerate/vDSP), written to match Essentia's numerical output. The mel
@@ -117,15 +117,15 @@ with or endorsement by Discogs is claimed.
 
 The following services are queried over the network at runtime to resolve now-playing
 metadata and per-artist/per-track genre. **No data or content from these services is
-bundled in or redistributed with Eqlume**; the app is only an API client. Each service is
-governed by its own terms of use. Users deploying or forking Eqlume are responsible for
+bundled in or redistributed with EqLume**; the app is only an API client. Each service is
+governed by its own terms of use. Users deploying or forking EqLume are responsible for
 complying with those terms and for supplying their own credentials where required.
 
 - **MusicBrainz** — used via the MusicBrainz Web Service v2
   (`https://musicbrainz.org/ws/2`) to resolve an artist's community genre/tag votes.
   MusicBrainz **data** is released into the public domain / under permissive terms (core
   data is **CC0**; some supplementary data is **CC BY-NC-SA**). Use of the API requires a
-  descriptive `User-Agent` header (Eqlume sends one identifying the app and its repo) and
+  descriptive `User-Agent` header (EqLume sends one identifying the app and its repo) and
   roughly ≤ 1 request/second, per the
   [MusicBrainz API policy](https://musicbrainz.org/doc/MusicBrainz_API/Rate_Limiting).
   Anyone redistributing a fork should set a `User-Agent` identifying their own build.
@@ -138,14 +138,14 @@ complying with those terms and for supplying their own credentials where require
 
 - **Spotify Web API** — used for the currently-playing track and queue look-ahead only,
   via user-authorized OAuth (PKCE). Subject to the
-  [Spotify Developer Terms](https://developer.spotify.com/terms). Eqlume ships **no**
+  [Spotify Developer Terms](https://developer.spotify.com/terms). EqLume ships **no**
   Spotify client credentials; a user must supply their own Client ID. Spotify content and
   metadata are not redistributed. Spotify is a trademark of Spotify AB; no affiliation is
   claimed.
 
 - **YouTube Music** — read via the browser's own open `music.youtube.com` tab (page DOM
   read through AppleScript/JavaScript) to obtain the currently-playing title/artist. No
-  YouTube/Google API is called and no content is redistributed; Eqlume only reads what is
+  YouTube/Google API is called and no content is redistributed; EqLume only reads what is
   already displayed in the user's browser session. Subject to YouTube's and Google's Terms
   of Service. YouTube and YouTube Music are trademarks of Google LLC; no affiliation is
   claimed.
@@ -167,13 +167,13 @@ from the community project:
   (AutoEq is licensed **MIT**; the aggregated measurement results are published under the
   repository's terms.)
 
-The three measurement contributors averaged for the Eqlume baseline, as cited in
-`Sources/EQPreset.swift`, are **HypetheSonics**, **Kazi**, and **Super Review**. Eqlume's
+The three measurement contributors averaged for the EqLume baseline, as cited in
+`Sources/EQPreset.swift`, are **HypetheSonics**, **Kazi**, and **Super Review**. EqLume's
 baseline is an **average/adaptation** of their published parametric fits, not a verbatim
 copy of any single result file. The **Harman target curve** referenced is research by
 Harman International / Sean Olive et al.; only the correction toward it (not the target
 curve values) is embedded here. The per-genre deltas layered on top of this baseline are
-the Eqlume author's own engineering judgment (first-party, MIT-licensed).
+the EqLume author's own engineering judgment (first-party, MIT-licensed).
 
 No measurement files, target-curve data files, or AutoEq source are redistributed —
 only the derived filter coefficients embedded in `EQPreset.swift`. Product names

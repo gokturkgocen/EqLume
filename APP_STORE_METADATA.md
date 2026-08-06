@@ -1,8 +1,8 @@
-# Eqlume App Store Metadata
+# EqLume App Store Metadata
 
 ## English
 
-**Name:** Eqlume
+**Name:** EqLume
 
 **Subtitle:** EQ that follows your music
 
@@ -10,7 +10,7 @@
 
 **Description:**
 
-Eqlume is a lightweight system-wide equalizer that lives in your Mac's menu bar. It processes audio in real time and can automatically choose a sound profile that fits what you are listening to.
+EqLume is a lightweight system-wide equalizer that lives in your Mac's menu bar. It processes audio in real time and can automatically choose a sound profile that fits what you are listening to.
 
 OPEN IT ONCE. LET IT FOLLOW THE MUSIC.
 
@@ -18,7 +18,7 @@ Automatic mode reads now-playing details from supported music apps and selects a
 
 BUILT FOR THE MAC AUDIO PATH
 
-Eqlume uses native Core Audio processing with no kernel extension or virtual audio driver. A live response graph and spectrum view show what is happening at a glance.
+EqLume uses native Core Audio processing with no kernel extension or virtual audio driver. A live response graph and spectrum view show what is happening at a glance.
 
 PRIVATE BY DESIGN
 
@@ -35,19 +35,19 @@ FEATURES
 • English and Turkish interface
 • No ads or behavioral tracking
 
-Eqlume currently applies its tuned correction when using the Mac's built-in 3.5 mm headphone output. Other outputs are bypassed safely.
+EqLume currently applies its tuned correction when using the Mac's built-in 3.5 mm headphone output. Other outputs are bypassed safely.
 
 **Keywords:** equalizer,audio,music,sound,EQ,headphones,spectrum,menubar,preset
 
-**Support URL:** https://github.com/gokturkgocen/Eqlume/issues
+**Support URL:** https://github.com/gokturkgocen/EqLume/issues
 
-**Marketing URL:** https://github.com/gokturkgocen/Eqlume
+**Marketing URL:** https://github.com/gokturkgocen/EqLume
 
-**Privacy URL:** https://github.com/gokturkgocen/Eqlume/blob/main/PRIVACY.md
+**Privacy URL:** https://github.com/gokturkgocen/EqLume/blob/main/PRIVACY.md
 
 ## Türkçe
 
-**Ad:** Eqlume
+**Ad:** EqLume
 
 **Alt başlık:** Müziğini takip eden EQ
 
@@ -55,7 +55,7 @@ Eqlume currently applies its tuned correction when using the Mac's built-in 3.5 
 
 **Açıklama:**
 
-Eqlume, Mac'in menü çubuğunda yaşayan hafif bir sistem geneli ekolayzırdır. Sesi gerçek zamanlı işler ve dinlediğin müziğe uygun ses profilini otomatik olarak seçebilir.
+EqLume, Mac'in menü çubuğunda yaşayan hafif bir sistem geneli ekolayzırdır. Sesi gerçek zamanlı işler ve dinlediğin müziğe uygun ses profilini otomatik olarak seçebilir.
 
 BİR KEZ AÇ. MÜZİĞİ O TAKİP ETSİN.
 
@@ -63,7 +63,7 @@ Otomatik mod, desteklenen müzik uygulamalarındaki çalan parça bilgisini okuy
 
 MAC'İN SES YOLU İÇİN TASARLANDI
 
-Eqlume, çekirdek uzantısı veya sanal ses sürücüsü gerektirmeden yerel Core Audio altyapısını kullanır. Canlı frekans grafiği ve spektrum görünümü yapılan işlemi anında gösterir.
+EqLume, çekirdek uzantısı veya sanal ses sürücüsü gerektirmeden yerel Core Audio altyapısını kullanır. Canlı frekans grafiği ve spektrum görünümü yapılan işlemi anında gösterir.
 
 GİZLİLİK ODAKLI
 
@@ -80,6 +80,6 @@ Ses, Mac üzerinde bellekte işlenir; kaydedilmez, yüklenmez ve geliştiriciye 
 • Türkçe ve İngilizce arayüz
 • Reklam ve davranış takibi yok
 
-Eqlume şu anda ayarlanmış düzeltmesini Mac'in yerleşik 3,5 mm kulaklık çıkışında uygular. Diğer çıkışlar güvenle bypass edilir.
+EqLume şu anda ayarlanmış düzeltmesini Mac'in yerleşik 3,5 mm kulaklık çıkışında uygular. Diğer çıkışlar güvenle bypass edilir.
 
 **Anahtar kelimeler:** ekolayzır,ses,müzik,EQ,kulaklık,spektrum,menü,preset

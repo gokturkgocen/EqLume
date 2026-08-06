@@ -2,39 +2,39 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key>
-    <string>Eqlume</string>
-    <key>CFBundleDisplayName</key>
-    <string>Eqlume</string>
-    <key>CFBundleIdentifier</key>
-    <string>com.gokturkgocen.Eqlume</string>
+	<key>CFBundleDisplayName</key>
+	<string>EqLume</string>
+	<key>CFBundleExecutable</key>
+	<string>Eqlume</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.gokturkgocen.Eqlume</string>
+	<key>CFBundleName</key>
+	<string>EqLume</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
 	<key>CFBundleVersion</key>
 	<string>4</string>
-	<key>LSApplicationCategoryType</key>
-	<string>public.app-category.utilities</string>
-	<key>NSHumanReadableCopyright</key>
-	<string>Copyright © 2026 Göktürk Göcen</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
-    <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
-    <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleExecutable</key>
-    <string>Eqlume</string>
-    <key>CFBundleIconFile</key>
-    <string>AppIcon</string>
-    <key>LSMinimumSystemVersion</key>
-    <string>26.0</string>
-    <key>LSUIElement</key>
-    <true/>
-    <key>NSHighResolutionCapable</key>
-    <true/>
-    <key>NSPrincipalClass</key>
-    <string>NSApplication</string>
-    <key>NSAudioCaptureUsageDescription</key>
-    <string>Eqlume needs audio recording permission to capture system audio and apply the equalizer. Audio is never recorded to disk or sent anywhere — it is only processed and played straight back to your output device.</string>
-    <key>NSAppleEventsUsageDescription</key>
-    <string>Eqlume communicates with Spotify, Apple Music, and browsers to read the currently playing track (title and artist) for automatic preset selection, and to send transport commands (previous / play-pause / next) when you use the playback controls.</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.utilities</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>26.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Eqlume communicates with Spotify, Apple Music, and browsers to read the currently playing track (title and artist) for automatic preset selection, and to send transport commands (previous / play-pause / next) when you use the playback controls.</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>Eqlume needs audio recording permission to capture system audio and apply the equalizer. Audio is never recorded to disk or sent anywhere — it is only processed and played straight back to your output device.</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>Copyright © 2026 Göktürk Göcen</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
 </dict>
 </plist>

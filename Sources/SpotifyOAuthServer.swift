@@ -47,8 +47,8 @@ final class SpotifyOAuthServer {
                         let (code, state) = self.parseCodeAndState(from: rawRequest)
                         let success = code != nil && state == expectedState
                         let body = success
-                            ? "<!doctype html><meta charset=utf-8><title>" + L.t("Connected", "Bağlandı") + "</title><body style='font:16px -apple-system;text-align:center;margin-top:80px;color:#1db954'>" + L.t("✓ Eqlume connected to Spotify.", "✓ Eqlume Spotify'a bağlandı.") + "<br><span style='color:#666;font-size:13px'>" + L.t("You can close this tab.", "Bu sekmeyi kapatabilirsin.") + "</span></body>"
-                            : "<!doctype html><meta charset=utf-8><title>" + L.t("Error", "Hata") + "</title><body style='font:16px -apple-system;text-align:center;margin-top:80px;color:#c00'>" + L.t("✗ Connection failed.", "✗ Bağlantı başarısız.") + "<br><span style='color:#666;font-size:13px'>" + L.t("Go back to Eqlume and try again.", "Eqlume'ya geri dönüp tekrar dene.") + "</span></body>"
+                            ? "<!doctype html><meta charset=utf-8><title>" + L.t("Connected", "Bağlandı") + "</title><body style='font:16px -apple-system;text-align:center;margin-top:80px;color:#1db954'>" + L.t("✓ EqLume connected to Spotify.", "✓ EqLume Spotify'a bağlandı.") + "<br><span style='color:#666;font-size:13px'>" + L.t("You can close this tab.", "Bu sekmeyi kapatabilirsin.") + "</span></body>"
+                            : "<!doctype html><meta charset=utf-8><title>" + L.t("Error", "Hata") + "</title><body style='font:16px -apple-system;text-align:center;margin-top:80px;color:#c00'>" + L.t("✗ Connection failed.", "✗ Bağlantı başarısız.") + "<br><span style='color:#666;font-size:13px'>" + L.t("Go back to EqLume and try again.", "EqLume'ya geri dönüp tekrar dene.") + "</span></body>"
                         self.sendHTTPResponse(body: body, on: conn) {
                             conn.cancel()
                             if let code, state == expectedState {

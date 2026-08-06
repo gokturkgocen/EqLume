@@ -62,7 +62,7 @@ final class StatusBarController: NSObject, NSWindowDelegate {
 
     private func configureButton() {
         guard let button = statusItem.button else { return }
-        button.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "Eqlume")
+        button.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "EqLume")
         button.image?.isTemplate = true
         button.action = #selector(togglePanel)
         button.target = self
@@ -93,7 +93,7 @@ final class StatusBarController: NSObject, NSWindowDelegate {
     }
 
     private static func openProjectPage(_ path: String) {
-        guard let url = URL(string: "https://github.com/gokturkgocen/Eqlume/blob/main/\(path)") else { return }
+        guard let url = URL(string: "https://github.com/gokturkgocen/EqLume/blob/main/\(path)") else { return }
         NSWorkspace.shared.open(url)
     }
 
@@ -358,7 +358,7 @@ final class StatusBarController: NSObject, NSWindowDelegate {
     private func configureButtonState() {
         guard let button = statusItem.button else { return }
         let symbol = audio.isRunning ? "waveform.path.ecg" : "waveform"
-        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Eqlume")
+        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "EqLume")
         button.image?.isTemplate = true
     }
 
@@ -393,8 +393,8 @@ final class StatusBarController: NSObject, NSWindowDelegate {
                 case .otherError(let c, let m): report += "✗ \(name): " + loc.t("error", "hata") + " \(c) — \(m.prefix(60))\n"
                 }
             }
-            report += loc.t("\nIf you see ⚠: System Settings → Privacy & Security → Automation → Eqlume",
-                            "\n⚠ varsa: Sistem Ayarları → Gizlilik ve Güvenlik → Otomasyon → Eqlume")
+            report += loc.t("\nIf you see ⚠: System Settings → Privacy & Security → Automation → EqLume",
+                            "\n⚠ varsa: Sistem Ayarları → Gizlilik ve Güvenlik → Otomasyon → EqLume")
             let alert = NSAlert()
             alert.messageText = loc.t("Automation access status", "Otomasyon erişim durumu")
             alert.informativeText = report
@@ -435,8 +435,8 @@ final class StatusBarController: NSObject, NSWindowDelegate {
             let loc = Loc.shared
             let alert = NSAlert()
             alert.messageText = loc.t("Spotify connection", "Spotify bağlantısı")
-            alert.informativeText = loc.t("Eqlume is connected to your Spotify account. Pre-fetch is active.\n\nDo you want to disconnect?",
-                                          "Eqlume Spotify hesabına bağlı. Pre-fetch aktif.\n\nBağlantıyı kaldırmak ister misin?")
+            alert.informativeText = loc.t("EqLume is connected to your Spotify account. Pre-fetch is active.\n\nDo you want to disconnect?",
+                                          "EqLume Spotify hesabına bağlı. Pre-fetch aktif.\n\nBağlantıyı kaldırmak ister misin?")
             alert.addButton(withTitle: loc.t("Stay connected", "Bağlı tut"))
             alert.addButton(withTitle: loc.t("Disconnect", "Bağlantıyı kaldır"))
             if alert.runModal() == .alertSecondButtonReturn { auth.disconnect(); syncVM() }
@@ -454,7 +454,7 @@ final class StatusBarController: NSObject, NSWindowDelegate {
         Create an app in the Spotify Developer dashboard:
 
         1. https://developer.spotify.com/dashboard
-        2. "Create app" → name: Eqlume
+        2. "Create app" → name: EqLume
         3. Redirect URI: \(SpotifyAuth.redirectURI)
         4. Choose the Web API → Save
         5. Copy the Client ID from Settings and paste it below
@@ -462,7 +462,7 @@ final class StatusBarController: NSObject, NSWindowDelegate {
         Spotify Developer dashboard'da bir uygulama oluştur:
 
         1. https://developer.spotify.com/dashboard
-        2. "Create app" → ad: Eqlume
+        2. "Create app" → ad: EqLume
         3. Redirect URI: \(SpotifyAuth.redirectURI)
         4. Web API'yi seç → Save
         5. Settings'ten Client ID'yi kopyala ve aşağıya yapıştır

@@ -1,17 +1,17 @@
-# Eqlume Submission Checklist
+# EqLume Submission Checklist
 
 Everything in this file can be copied into App Store Connect after the app record is created.
 
 ## Product record
 
 - Platform: macOS
-- Name: Eqlume
+- Name: EqLume
 - Bundle ID: `com.gokturkgocen.Eqlume`
 - SKU: `EQLUME-MAC-001`
 - Primary category: Utilities
 - Version: `1.0`
 - Copyright: `2026 Göktürk Göcen`
-- Content rights: Eqlume does not contain, show, or access third-party content for display in the product page.
+- Content rights: EqLume does not contain, show, or access third-party content for display in the product page.
 - Export compliance: the app does not use non-exempt encryption (`ITSAppUsesNonExemptEncryption` is false).
 
 Localized product text is ready in `APP_STORE_METADATA.md`. Upload the three PNG files in `assets/app-store/` in numeric order.
@@ -20,13 +20,13 @@ Localized product text is ready in `APP_STORE_METADATA.md`. Upload the three PNG
 
 Select **No, we do not collect data from this app**.
 
-Audio is processed in memory and never transmitted to the developer. Track and artist text may be sent directly from the user's Mac to MusicBrainz or Apple's iTunes Search API. The App Store flavor does not include Spotify OAuth/Web API pre-fetch. The developer has no server receiving this information, and Eqlume includes no advertising, analytics, tracking SDK, or developer account system.
+Audio is processed in memory and never transmitted to the developer. Track and artist text may be sent directly from the user's Mac to MusicBrainz or Apple's iTunes Search API. The App Store flavor does not include Spotify OAuth/Web API pre-fetch. The developer has no server receiving this information, and EqLume includes no advertising, analytics, tracking SDK, or developer account system.
 
 Use the public URL of `PRIVACY.md` as the Privacy Policy URL. Confirm that the published policy URL opens without login before submission.
 
 ## Age rating
 
-Eqlume contains no objectionable, user-generated, gambling, medical, sexual, violent, horror, alcohol, drug, or mature content. Answer **None** / **No** for these content categories unless App Store Connect introduces a new category that materially applies.
+EqLume contains no objectionable, user-generated, gambling, medical, sexual, violent, horror, alcohol, drug, or mature content. Answer **None** / **No** for these content categories unless App Store Connect introduces a new category that materially applies.
 
 ## App Review information
 

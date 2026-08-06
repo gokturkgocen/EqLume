@@ -33,7 +33,7 @@ struct PopoverView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "waveform")
                         .font(.system(size: 13, weight: .bold))
-                    Text("Eqlume")
+                    Text("EqLume")
                         .font(.system(size: 15, weight: .bold, design: .rounded))
                 }
                 .foregroundStyle(.white)
@@ -104,8 +104,8 @@ struct PopoverView: View {
     private var onboardingBody: String {
         switch onboardingPage {
         case 0:
-            return loc.t("Eqlume shapes system audio in real time and follows the character of every track.",
-                         "Eqlume sistem sesini gerçek zamanlı biçimlendirir ve her parçanın karakterini takip eder.")
+            return loc.t("EqLume shapes system audio in real time and follows the character of every track.",
+                         "EqLume sistem sesini gerçek zamanlı biçimlendirir ve her parçanın karakterini takip eder.")
         case 1:
             return loc.t("Audio stays on this Mac. Permission is used only to process sound and play it straight back.",
                          "Ses bu Mac'te kalır. İzin yalnızca sesi işleyip doğrudan geri çalmak için kullanılır.")
@@ -185,7 +185,7 @@ struct PopoverView: View {
             }
             .frame(width: 29, height: 29)
             .overlay(Circle().stroke(.white.opacity(0.10), lineWidth: 0.7))
-            Text("Eqlume")
+            Text("EqLume")
                 .font(.system(size: 16, weight: .bold, design: .rounded))
                 .foregroundStyle(.white)
             statusPill

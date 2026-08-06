@@ -1,4 +1,4 @@
-# Eqlume
+# EqLume
 
 System-wide equalizer for macOS, originally tuned for the **Moondrop Chu II IEM on the
 MacBook Air M4 3.5mm headphone jack** (but usable with any headphones). Auto-selects a
@@ -51,12 +51,12 @@ MIT for the app's own code; the bundled ML model is CC BY-NC-SA 4.0 (see LICENSE
   cache key includes the profile (`StatusBarController.curveKey`) because one preset name
   resolves to different curves on different devices.
 - **Muted-tap teardown INVARIANT (do not break):** the tap is a *global* `muteBehavior = .muted`
-  tap — while it exists it silences the whole system except Eqlume. So teardown must be bulletproof:
+  tap — while it exists it silences the whole system except EqLume. So teardown must be bulletproof:
   `teardownAudioResources()` is idempotent and NEVER guarded by `isRunning`; `startCore()` is
   exception-safe (a `defer` tears everything down on any partial-start throw); `stopCore()` always
   tears down (no `guard isRunning` early return). Past bug: a start that failed mid-way during a
   device hot-plug left an **orphaned muted tap** (`isRunning=false` but tap alive → every later
-  `stopCore` no-op'd) → the whole Mac stayed muted until Eqlume quit. Also: on Apple Silicon the
+  `stopCore` no-op'd) → the whole Mac stayed muted until EqLume quit. Also: on Apple Silicon the
   built-in speakers and 3.5mm jack share ONE device ID, so a headphone unplug flips
   `kAudioDevicePropertyDataSource` (ispk↔hdpn) WITHOUT a default-device change —
   `AudioEngine.updateDataSourceListener` watches that so `reconcile()` runs on plug/unplug too.
