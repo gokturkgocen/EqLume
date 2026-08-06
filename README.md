@@ -6,6 +6,7 @@
 [![Latest release](https://img.shields.io/github/v/release/gokturkgocen/Eqlume)](https://github.com/gokturkgocen/Eqlume/releases/latest)
 [![License](https://img.shields.io/badge/license-MIT%20(code)-blue)](LICENSE)
 [![Built with Claude Code](https://img.shields.io/badge/built%20with-Claude%20Code-D97757?logo=anthropic&logoColor=white)](https://claude.com/claude-code)
+[![Mac App Store](https://img.shields.io/badge/Mac%20App%20Store-Free-0D96F6?logo=apple&logoColor=white)](https://apps.apple.com/app/id6793070613)
 
 **A system-wide equalizer for macOS that listens to what you're playing and picks the right EQ curve for you — automatically.**
 
@@ -84,6 +85,12 @@ Now-playing information comes from Spotify (Web API, with optional queue pre-fet
 - No Apple Developer account needed — see below.
 
 ## Download
+
+**[⬇︎ Get it on the Mac App Store](https://apps.apple.com/app/id6793070613)** — free, and the easiest way to install (no Gatekeeper prompts, automatic updates).
+
+<sub>The App Store build leaves out the bundled audio-content classifier, whose model is licensed CC BY-NC-SA (non-commercial); automatic genre detection still works through the MusicBrainz and iTunes catalogs. The GitHub build below includes it.</sub>
+
+### Or download the full build from GitHub
 
 Grab the latest `Eqlume-macos.zip` from [Releases](https://github.com/gokturkgocen/Eqlume/releases), unzip it, and move `Eqlume.app` to `/Applications`.
 
