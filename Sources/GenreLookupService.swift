@@ -25,7 +25,12 @@ actor GenreLookupService {
         comps.queryItems = [
             URLQueryItem(name: "term", value: term),
             URLQueryItem(name: "entity", value: "song"),
-            URLQueryItem(name: "limit", value: "1"),
+            // Ask for several results rather than one: iTunes often puts a cover, remix or
+            // "feat." version first (searching "Kıvırcık Ali Gül Tükendi" can return
+            // "Kenan Ayık – Gül Tükendi (feat. Kıvırcık Ali)" ahead of the original). With
+            // only one result the caller's artist check rejects it and the whole lookup
+            // fails; with a few we can pick the entry that actually matches the artist.
+            URLQueryItem(name: "limit", value: "5"),
             URLQueryItem(name: "country", value: "US"),
         ]
         guard let url = comps.url else { return nil }
@@ -38,7 +43,12 @@ actor GenreLookupService {
                 cache[key] = .some(nil); return nil
             }
             let decoded = try JSONDecoder().decode(ITunesSearchResponse.self, from: data)
-            guard let r = decoded.results.first, let genre = r.primaryGenreName else {
+            // Prefer the first result whose artist actually matches what's playing; fall back
+            // to the top hit so the caller's own verification still gets to judge it.
+            let candidates = decoded.results.filter { $0.primaryGenreName != nil }
+            let best = candidates.first { artistNamesRoughlyMatch($0.artistName ?? "", artist) }
+                    ?? candidates.first
+            guard let r = best, let genre = r.primaryGenreName else {
                 cache[key] = .some(nil); return nil
             }
             let hit = Hit(genre: genre,

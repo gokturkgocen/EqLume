@@ -217,14 +217,31 @@ final class AutoPresetSelector {
     ]
     #endif
 
-    /// Splits "Artist - Title" on the first dash separator (" - ", " – ", " — ").
-    /// Returns nil when there's no clear separator or either side is too short.
+    /// Splits "Artist - Title" so a channel name sitting in the artist slot can be bypassed.
+    ///
+    /// Spaced separators (" - ", " – ", " — ") are tried first and are unambiguous. If none
+    /// matches we fall back to a BARE dash, because plenty of uploads are titled
+    /// "KIVIRCIK ALİ-GÜL TÜKENDİ" with no spaces — without this the real artist is never
+    /// looked up and the track ends up misclassified by the audio fallback.
+    ///
+    /// The bare-dash pass is deliberately conservative, since dashes are also part of names
+    /// (Jay-Z, T-Pain, Blink-182, AC-DC). It only splits when BOTH sides are at least 3
+    /// characters AND at least one side is multi-word — a hyphenated name almost never
+    /// satisfies both, while "Artist Name-Song Name" reliably does.
     private static func splitArtistTitle(_ s: String) -> (artist: String, title: String)? {
         for sep in [" - ", " – ", " — "] {
             guard let r = s.range(of: sep) else { continue }
             let left = s[..<r.lowerBound].trimmingCharacters(in: .whitespaces)
             let right = s[r.upperBound...].trimmingCharacters(in: .whitespaces)
             if left.count >= 2 && right.count >= 2 { return (left, right) }
+        }
+        for sep in ["-", "–", "—"] {
+            guard let r = s.range(of: sep) else { continue }
+            let left = s[..<r.lowerBound].trimmingCharacters(in: .whitespaces)
+            let right = s[r.upperBound...].trimmingCharacters(in: .whitespaces)
+            guard left.count >= 3, right.count >= 3,
+                  left.contains(" ") || right.contains(" ") else { continue }
+            return (left, right)
         }
         return nil
     }
@@ -560,7 +577,9 @@ final class AutoPresetSelector {
         if raw.contains("blues")                                             { return .blues }
         // Acoustic / Folk / Country / Singer-songwriter / Americana / Bluegrass
         #if !APP_STORE
-        if raw.contains("arabesk") || raw.contains("türk halk")
+        // iTunes labels Turkish folk simply "Halk" (and Turkish art music "Sanat"), not
+        // "Türk Halk" — matching only the long form meant these tracks fell through to pop.
+        if raw.contains("arabesk") || raw.contains("halk") || raw.contains("türkü")
             || raw.contains("turkish folk")                                { return .acoustic }
         #endif
         if raw.contains("acoustic") || raw.contains("folk")
@@ -578,6 +597,7 @@ final class AutoPresetSelector {
             || raw.contains("worldbeat") || raw.contains("traditional")
             || raw.contains("flamenco") || raw.contains("celtic")
             || raw.contains("türk halk") || raw.contains("türk sanat")
+            || raw.contains("halk") || raw.contains("türkü") || raw.contains("sanat müziği")
             || raw.contains("arabesk") || raw.contains("turkish folk")
             || raw.contains("turkish classical")                             { return .world }
         // Spoken / podcast / audiobook / comedy / children's content
