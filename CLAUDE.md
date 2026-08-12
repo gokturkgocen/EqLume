@@ -5,6 +5,15 @@ MacBook Air M4 3.5mm headphone jack** (but usable with any headphones). Auto-sel
 genre-appropriate EQ preset from what's playing. Author: Göktürk Göcen. Open source —
 MIT for the app's own code; the bundled ML model is CC BY-NC-SA 4.0 (see LICENSE / THIRD-PARTY.md).
 
+**Spelling of the name — one rule.** Everything a human reads says **`EqLume`** (capital L):
+`CFBundleName` / `CFBundleDisplayName`, README, App Store listing, list submissions, marketing.
+Everything a machine keys on keeps the old single-capital form and must NOT be renamed:
+`CFBundleIdentifier` = `com.gokturkgocen.Eqlume`, `CFBundleExecutable` = `Eqlume`, the
+UserDefaults key prefix `Eqlume.*` (`Eqlume.language`, `Eqlume.enabledOutputDeviceUIDs`),
+and the built bundle path `build/Eqlume.app`. Changing the bundle id would orphan the App
+Store record and every stored preference; changing a defaults key would silently reset the
+user's settings. The GitHub repo is `gokturkgocen/EqLume`.
+
 ## Build / run
 
 ```bash
@@ -95,6 +104,17 @@ Per track, resolves a preset in this order:
    with the real artist in the title ("Gary Moore - Parisienne Walkways"); verified against the
    parsed artist. The popover shows the resolved SOURCE next to the genre dot
    (`EQViewModel.deriveSource`: MusicBrainz / katalog / analiz / ön-yükleme).
+   **Three compounding faults once made `KIVIRCIK ALİ-GÜL TÜKENDİ` come out as Vokal/Diyalog**;
+   all three are fixed and each is a trap worth remembering. (a) `splitArtistTitle` matched only
+   *spaced* separators (`" - "`), so a bare dash left the channel name in the artist slot and the
+   real artist was never looked up. It now also splits on a bare `-`/`–`/`—`, guarded so hyphenated
+   names survive: both sides ≥3 chars AND at least one side multi-word (verified: Jay-Z, T-Pain,
+   Blink-182, AC-DC do not split; "Sezen Aksu-Firuze" does). (b) iTunes labels Turkish folk simply
+   **`Halk`**, so keyword rules must match bare `halk` / `türkü` / `sanat müziği`, not only
+   `"türk halk"`. (c) `GenreLookupService` asked for `limit=1`, and a cover/feat. upload can
+   outrank the original ("Kenan Ayık – Gül Tükendi (feat. Kıvırcık Ali)" → Hip-Hop/Rap); the
+   artist check then rejected it and the whole lookup failed. It now fetches 5 and picks the first
+   result whose artist actually matches (`artistNamesRoughlyMatch`), falling back to the top hit.
 3. **Audio-content classifier** (catalog miss) — deferred ~4.5s so the analysis ring fills with
    the current track, then Discogs-EffNet CoreML classifies from the audio itself. Catalog-independent.
 4. Default → pop.
@@ -198,10 +218,64 @@ Menu-bar icon opens an `NSPopover` hosting `PopoverView` (SwiftUI via `NSHosting
 - Build adds `-framework SwiftUI`. Offline UI verification: `ImageRenderer` collapses `ScrollView`
   content, so use real AppKit `NSHostingView.cacheDisplay` to snapshot the popover faithfully.
 
+## Distribution — Mac App Store
+
+- **Live on the Mac App Store as "EqLume" 1.0, free, since 2026-07-29.** Verified via
+  `https://itunes.apple.com/lookup?id=6793070613`. Product page: `apps.apple.com/app/id6793070613`.
+  The store build is the `APP_STORE` flavor of build 4 (`build/Eqlume-1.0-build-4.pkg`, 2026-07-28).
+- **Two flavors, one source tree,** split by the `APP_STORE` compile flag (`#if !APP_STORE`).
+  The store build **omits** (i) the bundled Discogs-EffNet model — it is CC BY-NC-SA, i.e.
+  non-commercial, so shipping it in a store binary is the wrong license posture, and (ii) the
+  Spotify OAuth path, so no user-supplied Client ID / loopback listener is needed. Local/GitHub
+  builds keep both. `scripts/preflight-appstore.sh` asserts this by inspecting the built binary
+  (no bundled `.mlmodelc`, and no `38123` / `api.spotify.com` strings).
+- **Rejection lesson — Guideline 2.4.5(i), entitlements minimalism.** Build 3 was rejected because
+  `Eqlume.appstore.entitlements` carried `com.apple.security.network.server` (and a
+  `keychain-access-groups` entry) that the store flavor does not use — the loopback OAuth listener
+  and Keychain token storage only exist in the non-store build. Apple reads the *declared*
+  entitlements, not the code paths. Both were removed; the store entitlements are now app-sandbox,
+  `network.client`, `device.audio-input`, `automation.apple-events` (+ its temporary exception).
+  `build.sh` and `scripts/preflight-appstore.sh` both re-assert the forbidden ones are absent and
+  the required ones present, via `codesign -d --entitlements`, so this cannot regress silently.
+- `scripts/package-appstore.sh` reads `CFBundleShortVersionString` / `CFBundleVersion` out of
+  `Info.plist` for the `.pkg` name — do not hardcode the build number there again.
+- **Unreleased since 1.0** (in git, not in the store): the `EqLume` display-name rename, the
+  App Store badge/README work, and the Turkish-folk classification fix. A store submission would
+  need `CFBundleVersion` bumped past 4.
+
+## Discoverability / awesome-list submissions
+
+Marketing state, so it isn't re-litigated. Copy for every remaining channel is written and lives
+in the launch kit (Show HN, r/macapps, r/headphones, AlternativeTo, Product Hunt) — the user posts
+those himself; AlternativeTo blocks brand-new accounts for 7 days.
+
+- `serhii-londar/open-source-mac-os-apps` **#1243 — open**. No PR template in that repo. A
+  permanently "pending" commit status there is normal, not a failing check.
+- `jaywcjlove/awesome-mac` **#2500 — open**, FOSSA license check passed. No PR template either.
+- `iCHAIT/awesome-macOS` **#975 — closed**, replaced by **#993 (open)**. **The lesson:** that repo
+  has a mandatory PR template whose footer says a PR that replaces it wholesale "will be closed
+  without discussion", and its guidelines repeat it. #975 replaced the template with prose, so
+  maintainer `herrbischoff` closed it in a 5-PR sweep with no comment (#977/#975/#974/#971/#969) —
+  nothing was wrong with the diff. #993 re-submits the identical one-line entry with all seven
+  template items filled. Two further rules of that repo worth knowing: it rejects Electron apps,
+  and it rejects "AI prompt wrappers", while explicitly allowing *local, specialised ML models as
+  one step of a larger process* — which is exactly what the Discogs-EffNet classifier is, and #993
+  says so. Entry format follows the `Pasteboard Viewer` precedent: primary link → App Store, OSS
+  badge → GitHub repo, plus the Freeware badge, description ending in a period, placed
+  alphabetically between BackgroundMusic and Fader.
+- README carries the App Store badge, a demo GIF, an architecture diagram and a
+  "How it compares" table (vs eqMac / SoundSource / Boom 3D); `assets/social-preview.png` is a
+  1280×640 card meant for GitHub → Settings → Social preview.
+
 ## Status
 
 Functionally complete incl. genre-themed SwiftUI UI with live spectrum + EQ curve. All components
-validated. Per-device opt-in + neutral profile shipped (see "Which outputs get EQ'd"), so
-non-Chu-II outputs (e.g. monitor-fed desk speakers) can be EQ'd with genre deltas only.
+validated. Shipping on the Mac App Store (above). Per-device opt-in shipped (see "Which outputs get
+EQ'd"): the 3.5mm jack always gets the Chu II correction, built-in speakers are never touched, and
+any other output can be opted in to `desktopSpeakerBaseline` — a class-typical 2.1-desk-speaker
+correction, **not** a measurement of the user's Logitech set, so it is meant to be trimmed by ear
+(bass thin → 80 Hz toward −1; treble harsh → 3 kHz toward +1.5). That ear-tuning pass has not been
+done yet.
 Open future ideas (not started): album-art in now-playing card, user master bass/mid/treble trim,
-a measured baseline for a specific speaker set (currently neutral = no baseline).
+a genuinely measured baseline for a specific speaker set, per-device profile choice (the opt-in
+list is currently one flat set — see the caveat under "Which outputs get EQ'd").
