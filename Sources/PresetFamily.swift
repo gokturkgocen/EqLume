@@ -67,6 +67,10 @@ enum PresetFamily: String, CaseIterable {
         case "classical":
             return .classical
         case "electronic":
+            // Discogs files "Modern Classical" (solo piano, Einaudi-style scoring) under
+            // the Electronic parent. It is not dance music — bass-lifting it as EDM is the
+            // opposite of what it needs.
+            if style.contains("classical") { return .classical }
             // Most electronic → EDM; the calmer styles already caught above as ambient.
             return .edm
         case "folk, world, & country":

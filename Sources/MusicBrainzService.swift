@@ -19,8 +19,39 @@ actor MusicBrainzService {
 
     struct WeightedGenre { let name: String; let count: Int }
 
-    private var cache: [String: [WeightedGenre]] = [:]   // artist(lower) → genres (cached miss = [])
+    private var cache: [String: [WeightedGenre]] = [:]        // artist(lower) → genres (cached miss = [])
+    private var albumCache: [String: [WeightedGenre]] = [:]   // artist||title → album genres
     private var lastRequest = Date.distantPast
+
+    /// Count-weighted genres of the ALBUM a track belongs to, highest count first.
+    ///
+    /// Artist votes describe a career, and that is the wrong answer whenever one record
+    /// departs from it. Tame Impala's artist votes are psychedelic rock 13 / alternative
+    /// rock 5 / indie rock 3, so every track of theirs resolves to rock — but "Dracula" is
+    /// on *Deadbeat*, whose own votes are dance-pop 3 plus house / tech house / techno /
+    /// electronic. The album is the better unit for an EQ curve, so callers try this first
+    /// and fall back to `artistGenres` when it comes up empty (many tracks have no
+    /// album-level votes at all, and singles have no studio album to look at).
+    ///
+    /// Two requests (recording search → release-group detail), cached per artist+title.
+    func albumGenres(artist: String, title: String) async -> [WeightedGenre]? {
+        let key = "\(artist.lowercased())||\(title.lowercased())"
+        if let cached = albumCache[key] { return cached.isEmpty ? nil : cached }
+        switch await searchStudioAlbumMBID(artist: artist, title: title) {
+        case .failed:
+            return nil                         // transient — do not poison the cache
+        case .noMatch:
+            albumCache[key] = []
+            return nil
+        case .found(let mbid):
+            // Genres only, no `tags` fallback: release-group tags are full of things that
+            // are not genres at all ("plattentests.de", "offizielle charts", "5+ wochen").
+            guard let genres = await fetchGenres(entity: "release-group", mbid: mbid,
+                                                 tagsFallback: false) else { return nil }
+            albumCache[key] = genres
+            return genres.isEmpty ? nil : genres
+        }
+    }
 
     /// Count-weighted genres for `name`, highest count first. nil if the artist isn't found
     /// or has no genre votes → caller falls back to iTunes.
@@ -38,13 +69,52 @@ actor MusicBrainzService {
             cache[key] = []               // genuinely unknown artist — cache the miss
             return nil
         case .found(let mbid):
-            guard let genres = await fetchGenres(mbid: mbid) else { return nil }  // request failed → don't cache
+            // request failed → don't cache
+            guard let genres = await fetchGenres(entity: "artist", mbid: mbid,
+                                                 tagsFallback: true) else { return nil }
             cache[key] = genres           // 200-backed (possibly empty) → cache
             return genres.isEmpty ? nil : genres
         }
     }
 
     private enum SearchResult { case found(String), noMatch, failed }
+
+    /// Finds the release group of the studio album a recording belongs to.
+    ///
+    /// Everything that is not a plain album is skipped, because its genre votes describe
+    /// the package rather than the track: "Dracula" is on the compilations "Now That's
+    /// What I Call Music! 123" and "Bravo Hits 132", on remix singles, and on DJ-mixes —
+    /// the entry we want, `Deadbeat`, is the one with primary type Album and no secondary
+    /// type at all. Recordings come back in relevance order, so the first qualifying
+    /// release group of the best artist-matching recording is the original album.
+    private func searchStudioAlbumMBID(artist: String, title: String) async -> SearchResult {
+        var c = URLComponents(string: "\(Self.base)/recording")!
+        c.queryItems = [
+            URLQueryItem(name: "query",
+                         value: "artist:\"\(Self.luceneEscaped(artist))\" AND recording:\"\(Self.luceneEscaped(title))\""),
+            URLQueryItem(name: "fmt", value: "json"),
+            URLQueryItem(name: "limit", value: "8"),
+        ]
+        guard let url = c.url, let data = await get(url),
+              let obj = try? JSONDecoder().decode(RecordingSearch.self, from: data) else { return .failed }
+        for recording in obj.recordings {
+            let credited = (recording.artistCredit ?? []).map(\.artist.name)
+            guard credited.contains(where: { artistNamesRoughlyMatch($0, artist) }) else { continue }
+            for release in recording.releases ?? [] {
+                guard let group = release.releaseGroup,
+                      group.primaryType == "Album",
+                      (group.secondaryTypes ?? []).isEmpty else { continue }
+                return .found(group.id)
+            }
+        }
+        return .noMatch
+    }
+
+    /// Escapes the two characters that would break out of a quoted Lucene term.
+    private static func luceneEscaped(_ s: String) -> String {
+        s.replacingOccurrences(of: "\\", with: "\\\\")
+         .replacingOccurrences(of: "\"", with: "\\\"")
+    }
 
     private func searchArtistMBID(name: String) async -> SearchResult {
         var c = URLComponents(string: "\(Self.base)/artist")!
@@ -55,20 +125,34 @@ actor MusicBrainzService {
         ]
         guard let url = c.url, let data = await get(url),
               let obj = try? JSONDecoder().decode(ArtistSearch.self, from: data) else { return .failed }
-        // Verify the name so an ambiguous query can't pull a different artist's genres.
-        let match = obj.artists.first { artistNamesRoughlyMatch($0.name, name) } ?? obj.artists.first
+        // The name has to actually agree, and there is deliberately NO "take the top hit
+        // anyway" fallback. MusicBrainz search always answers with its best fuzzy guesses,
+        // so a query that is not really an artist name — a work-title fragment, an upload
+        // channel — would otherwise be handed a stranger's genres at full confidence.
+        // That is exactly how a Chopin nocturne came out as METAL: the title splitter cut
+        // "E-flat" at its dash, the fragment "Chopin: Nocturne in E" went out as an artist
+        // query, and a Dallas metal band called Nocturne matched it on a bare substring —
+        // outranking the score-100 "Fryderyk Chopin" sitting at the top of the same result.
+        // Unknown artist → .noMatch, so the caller can fall back to iTunes and then to
+        // audio analysis, both of which are able to say "I don't know".
+        //
+        // Second chance for the top hit only: MusicBrainz's index knows aliases and
+        // transliterations our normalizer cannot ("Frédéric Chopin" is indexed as
+        // "Fryderyk Chopin"), and in those the surname is the part that survives.
+        let match = obj.artists.first { artistNamesRoughlyMatch($0.name, name) }
+            ?? obj.artists.first.flatMap { artistSurnamesMatch($0.name, name) ? $0 : nil }
         return match.map { .found($0.id) } ?? .noMatch
     }
 
     /// Returns nil ONLY on request failure (so the caller won't cache it); an empty array
-    /// means the artist was found but carries no genre/tag votes.
-    private func fetchGenres(mbid: String) async -> [WeightedGenre]? {
-        guard let url = URL(string: "\(Self.base)/artist/\(mbid)?inc=genres+tags&fmt=json"),
+    /// means the entity was found but carries no genre/tag votes.
+    private func fetchGenres(entity: String, mbid: String, tagsFallback: Bool) async -> [WeightedGenre]? {
+        guard let url = URL(string: "\(Self.base)/\(entity)/\(mbid)?inc=genres+tags&fmt=json"),
               let data = await get(url),
-              let obj = try? JSONDecoder().decode(ArtistDetail.self, from: data) else { return nil }
+              let obj = try? JSONDecoder().decode(GenreDetail.self, from: data) else { return nil }
         // Prefer the curated `genres` list; fall back to raw `tags`. Both carry vote counts.
         let genres = obj.genres ?? []
-        let src = genres.isEmpty ? (obj.tags ?? []) : genres
+        let src = (genres.isEmpty && tagsFallback) ? (obj.tags ?? []) : genres
         return src.map { WeightedGenre(name: $0.name, count: max(1, $0.count ?? 1)) }
                   .sorted { $0.count > $1.count }
     }
@@ -92,9 +176,46 @@ actor MusicBrainzService {
         let artists: [Item]
         struct Item: Decodable { let id: String; let name: String }
     }
-    private struct ArtistDetail: Decodable {
+    /// Genre/tag votes as returned for any MusicBrainz entity (artist, release group, …).
+    private struct GenreDetail: Decodable {
         let genres: [Tag]?
         let tags: [Tag]?
         struct Tag: Decodable { let name: String; let count: Int? }
+    }
+
+    private struct RecordingSearch: Decodable {
+        let recordings: [Recording]
+
+        struct Recording: Decodable {
+            let artistCredit: [Credit]?
+            let releases: [Release]?
+
+            private enum CodingKeys: String, CodingKey {
+                case artistCredit = "artist-credit", releases
+            }
+
+            struct Credit: Decodable {
+                let artist: Artist
+                struct Artist: Decodable { let name: String }
+            }
+
+            struct Release: Decodable {
+                let releaseGroup: Group?
+
+                private enum CodingKeys: String, CodingKey { case releaseGroup = "release-group" }
+
+                struct Group: Decodable {
+                    let id: String
+                    let primaryType: String?
+                    let secondaryTypes: [String]?
+
+                    private enum CodingKeys: String, CodingKey {
+                        case id
+                        case primaryType = "primary-type"
+                        case secondaryTypes = "secondary-types"
+                    }
+                }
+            }
+        }
     }
 }

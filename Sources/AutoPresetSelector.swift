@@ -133,7 +133,9 @@ final class AutoPresetSelector {
 
     /// Catalog resolution (no audio). Order:
     ///   0. direct genre hint (Music.app gives genre) — trust it
-    ///   1. catalog (iTunes) WITH artist-name verification (rejects wrong matches)
+    ///   1. classical work markers in the TITLE — better than any catalog for this one genre
+    ///   2. catalog (MusicBrainz → iTunes) WITH artist-name verification
+    ///   3. the same, retried with an "Artist - Title" parsed out of the title
     /// Returns nil when the catalog can't confidently resolve → caller defers to
     /// the audio-content classifier. Used for both now-playing and prefetch.
     private func catalogPreset(artist: String, title: String, genreHint: String?) async -> (EQPreset, String)? {
@@ -145,9 +147,16 @@ final class AutoPresetSelector {
         if let g = genreHint, !g.isEmpty {
             return (mapGenreToPreset(g), "[\(g)]")
         }
-        // 1. Resolve the reported (artist, title).
+        // 1. Classical works announce themselves in the title (see `looksLikeClassicalWork`).
+        //    This runs BEFORE any lookup on purpose: on a classical upload the artist field
+        //    holds the performer, who is usually in no catalog at all, while the title states
+        //    exactly what the piece is.
+        if Self.looksLikeClassicalWork(title) {
+            return (.classical, "[\(L.t("classical work", "klasik eser")) ♯]")
+        }
+        // 2. Resolve the reported (artist, title).
         if let r = await resolveGenre(artist: artist, title: title) { return r }
-        // 2. "Artist - Title" embedded in the title field. Common on YouTube / YT Music where
+        // 3. "Artist - Title" embedded in the title field. Common on YouTube / YT Music where
         //    a compilation/upload channel lands in the artist field (e.g. "NEA ZIXNH") and the
         //    real artist sits inside the title ("Gary Moore - Parisienne Walkways"). Split on
         //    the first dash and retry with the artist parsed from the title.
@@ -167,6 +176,14 @@ final class AutoPresetSelector {
     ///      MusicBrainz doesn't cover).
     /// Returns nil if neither resolves confidently → caller defers to the audio classifier.
     private func resolveGenre(artist: String, title: String) async -> (EQPreset, String)? {
+        // Album votes before artist votes: they describe THIS record, where artist votes
+        // describe a career. Tame Impala is psychedelic rock by career and dance/house on
+        // "Deadbeat", and it is the record that should pick the curve. Album coverage is
+        // thinner than artist coverage, so this is a preference, not a replacement.
+        if let genres = await musicBrainz.albumGenres(artist: artist, title: title),
+           let (preset, top) = Self.mapWeightedGenresToPreset(genres) {
+            return (preset, "[\(top) ♪]")
+        }
         if let genres = await musicBrainz.artistGenres(name: artist),
            let (preset, top) = Self.mapWeightedGenresToPreset(genres) {
             return (preset, "[\(top) ♪]")
@@ -217,6 +234,33 @@ final class AutoPresetSelector {
     ]
     #endif
 
+    /// True when a title carries an unambiguous classical-publishing marker. Classical
+    /// uploads are the one case where the title is a better genre source than any catalog:
+    /// the artist field names a performer nobody has indexed ("Johannes Helmer Pedersen"),
+    /// while the title spells the work out ("Chopin: Nocturne in E-flat Major, Op. 9 No. 2").
+    ///
+    /// Two ways to qualify, both chosen to stay out of popular music:
+    ///   • an opus or thematic-catalogue number (Op. 9, BWV 846, K. 545) — these appear
+    ///     essentially nowhere else, so one is enough on its own;
+    ///   • a classical form word TOGETHER WITH a movement number or a stated tonality.
+    ///     The tonality alone would not do: "In A Major Way" is a soul album.
+    static func looksLikeClassicalWork(_ title: String) -> Bool {
+        let t = title.lowercased()
+        func has(_ pattern: String) -> Bool { t.range(of: pattern, options: .regularExpression) != nil }
+
+        // Single-letter catalogues (Mozart's K., Schubert's D.) require their period —
+        // a bare "d 2" is far likelier to be anything else.
+        let opusOrCatalogue = has(#"\bop(\.|us)?\s*\d"#)
+            || has(#"\b(bwv|hwv|hob|woo|rv|kv)\.?\s*\d{1,4}\b"#)
+            || has(#"\b[kd]\.\s*\d{1,4}\b"#)
+        if opusOrCatalogue { return true }
+
+        let formWord = has(#"\b(symphony|sonata|concerto|nocturne|prelude|etude|étude|fugue|mazurka|polonaise|rhapsody|waltz|quartet|quintet|cantata|oratorio|requiem|senfoni|sonat|konçerto|noktürn|uvertür|overture)\b"#)
+        guard formWord else { return false }
+        return has(#"\bno\.?\s*\d"#)
+            || has(#"\bin\s+[a-h](\s*-?\s*(flat|sharp))?\s+(major|minor)\b"#)
+    }
+
     /// Splits "Artist - Title" so a channel name sitting in the artist slot can be bypassed.
     ///
     /// Spaced separators (" - ", " – ", " — ") are tried first and are unambiguous. If none
@@ -241,6 +285,10 @@ final class AutoPresetSelector {
             let right = s[r.upperBound...].trimmingCharacters(in: .whitespaces)
             guard left.count >= 3, right.count >= 3,
                   left.contains(" ") || right.contains(" ") else { continue }
+            // A musical key is not "Artist-Title": in "Nocturne in E-flat Major" the text
+            // just left of the dash is a single letter. Splitting there yielded the artist
+            // query "Chopin: Nocturne in E", which then matched a metal band named Nocturne.
+            if left.split(separator: " ").last?.count == 1 { continue }
             return (left, right)
         }
         return nil
@@ -355,7 +403,7 @@ final class AutoPresetSelector {
                 applyIfChanged(preset)
                 lastDetection = "\(prefix) \(tag) → \(preset.name)"
                 markResolved(app: app, artist: current.artist, title: current.title,
-                             kind: tag.contains("♪") ? .musicBrainz : .catalog)
+                             kind: DetectionSourceKind.forTag(tag))
             } else {
                 lastDetection = "\(prefix) [katalog yok · ses analizi…]"
                 markResolved(app: app, artist: current.artist, title: current.title, kind: .analyzing)
@@ -423,7 +471,7 @@ final class AutoPresetSelector {
                 applyIfChanged(preset)
                 lastDetection = "\(prefix) \(tag) → \(preset.name)"
                 markResolved(app: "Spotify", artist: item.primaryArtist, title: item.name,
-                             kind: tag.contains("♪") ? .musicBrainz : .catalog)
+                             kind: DetectionSourceKind.forTag(tag))
             } else {
                 // 3. Catalog miss → defer to audio-content classification.
                 lastDetection = "\(prefix) [katalog yok · ses analizi…]"
@@ -492,7 +540,7 @@ final class AutoPresetSelector {
                 applyIfChanged(preset)
                 lastDetection = "\(prefix) \(tag) → \(preset.name)"
                 markResolved(app: app, artist: track.artist, title: track.title,
-                             kind: tag.contains("♪") ? .musicBrainz : .catalog)
+                             kind: DetectionSourceKind.forTag(tag))
             } else {
                 lastDetection = "\(prefix) [katalog yok · ses analizi…]"
                 markResolved(app: app, artist: track.artist, title: track.title, kind: .analyzing)
@@ -637,22 +685,30 @@ final class AutoPresetSelector {
     /// Picks a preset family from count-weighted genre votes (MusicBrainz). Each vote's
     /// count is added to the family its name maps to; the highest-scoring family wins, so
     /// low-count noise (e.g. a stray "chillout" vote on a metal artist) can't beat the
-    /// dominant style. Returns the family plus the single highest-count genre name (for the
-    /// detection tag), or nil when nothing recognizable matched.
+    /// dominant style. Returns the family plus the genre name to display, which is the
+    /// strongest vote INSIDE the winning family — not the strongest vote overall, or the
+    /// label could contradict the preset it sits next to (the album "Deadbeat" leads with
+    /// `dance-pop`, yet its house/techno/electronic votes add up to the EDM family).
+    /// nil when nothing recognizable matched.
     static func mapWeightedGenresToPreset(_ genres: [MusicBrainzService.WeightedGenre]) -> (EQPreset, String)? {
         guard !genres.isEmpty else { return nil }
-        var tally = [Int: Int]()   // rule index → summed vote count
+        var tally = [Int: Int]()               // rule index → summed vote count
+        var topVote = [Int: (String, Int)]()   // rule index → its highest single vote
+        func record(_ idx: Int, _ wg: MusicBrainzService.WeightedGenre) {
+            tally[idx, default: 0] += wg.count
+            if wg.count > (topVote[idx]?.1 ?? -1) { topVote[idx] = (wg.name, wg.count) }
+        }
         for wg in genres {
             let g = wg.name.lowercased()
             #if !APP_STORE
             if g.contains("arabesk") || g.contains("türk halk") || g.contains("turkish folk"),
                let idx = genreKeywordRules.firstIndex(where: { $0.0.name == EQPreset.acoustic.name }) {
-                tally[idx, default: 0] += wg.count
+                record(idx, wg)
                 continue
             }
             #endif
             for (idx, rule) in genreKeywordRules.enumerated() where rule.1.contains(where: { g.contains($0) }) {
-                tally[idx, default: 0] += wg.count
+                record(idx, wg)
                 break   // first matching rule wins for this tag
             }
         }
@@ -663,7 +719,7 @@ final class AutoPresetSelector {
             if s > bestScore { bestScore = s; bestIdx = idx }
         }
         guard bestIdx >= 0 else { return nil }
-        return (genreKeywordRules[bestIdx].0, genres.first?.name ?? "MusicBrainz")
+        return (genreKeywordRules[bestIdx].0, topVote[bestIdx]?.0 ?? genres.first?.name ?? "MusicBrainz")
     }
 
     private func mapBundleToPreset(_ bundle: String) -> EQPreset {

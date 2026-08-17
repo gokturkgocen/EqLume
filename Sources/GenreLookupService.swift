@@ -72,20 +72,48 @@ actor GenreLookupService {
     }
 }
 
-/// Fuzzy name match used to validate catalog hits. Normalizes (lowercase, strip
-/// non-alphanumerics) then checks containment either direction. Catches the common
-/// wrong-match case while tolerating "feat." / punctuation / casing differences.
-func artistNamesRoughlyMatch(_ a: String, _ b: String) -> Bool {
-    func norm(_ s: String) -> String {
-        s.lowercased().unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }
-            .map(String.init).joined()
-    }
-    let na = norm(a), nb = norm(b)
+/// Fuzzy name match used to validate catalog hits: does `candidate` (what a lookup
+/// returned) plausibly name the same artist as `wanted` (what is playing)? Tolerates
+/// "feat." tails, punctuation, diacritics and casing.
+///
+/// Partial matches must be ANCHORED, and which anchor is legal depends on direction:
+///   • `wanted` is the shorter one — a short form of a fuller catalog name ("Chopin" vs
+///     "Fryderyk Chopin", "Beatles" vs "The Beatles") → prefix OR suffix.
+///   • `candidate` is the shorter one — a real name with trailing noise in what's playing
+///     ("Sezen Aksu" vs "Sezen Aksu feat. X") → prefix ONLY.
+/// An UNANCHORED substring, which this used to accept, is what let a Dallas metal band
+/// named "Nocturne" match the query "Chopin: Nocturne in E" and give a piano nocturne the
+/// metal preset — and, in the same way, "Helmer" match "Johannes Helmer Pedersen".
+func artistNamesRoughlyMatch(_ candidate: String, _ wanted: String) -> Bool {
+    let na = normalizedNameTokens(candidate).joined()
+    let nb = normalizedNameTokens(wanted).joined()
     guard !na.isEmpty, !nb.isEmpty else { return false }
     if na == nb { return true }
-    // Containment handles "artist" vs "artist feat x", but require the shorter to be
-    // at least 4 chars to avoid trivial substring false-positives ("no1" in "no1xyz").
-    let shorter = na.count <= nb.count ? na : nb
-    let longer = na.count <= nb.count ? nb : na
-    return shorter.count >= 4 && longer.contains(shorter)
+    // Require the shorter to be at least 4 chars to avoid trivial prefix false-positives
+    // ("no1" in "no1xyz").
+    let candidateIsShorter = na.count <= nb.count
+    let shorter = candidateIsShorter ? na : nb
+    let longer  = candidateIsShorter ? nb : na
+    guard shorter.count >= 4 else { return false }
+    if longer.hasPrefix(shorter) { return true }
+    return !candidateIsShorter && longer.hasSuffix(shorter)
+}
+
+/// True when two names end in the same surname token (≥4 chars). Used as a last resort
+/// for a search engine's own top-ranked hit, where an alias or a transliteration can
+/// leave nothing else in common — MusicBrainz indexes "Frédéric Chopin" under the Polish
+/// "Fryderyk Chopin", and only "Chopin" survives that.
+func artistSurnamesMatch(_ candidate: String, _ wanted: String) -> Bool {
+    guard let a = normalizedNameTokens(candidate).last,
+          let b = normalizedNameTokens(wanted).last,
+          a.count >= 4 else { return false }
+    return a == b
+}
+
+/// Lowercased, diacritic-folded name tokens with all punctuation dropped.
+private func normalizedNameTokens(_ s: String) -> [String] {
+    s.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: Locale(identifier: "en_US_POSIX"))
+        .lowercased()
+        .split { !$0.isLetter && !$0.isNumber }
+        .map(String.init)
 }

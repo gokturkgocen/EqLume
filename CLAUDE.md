@@ -88,12 +88,33 @@ user's settings. The GitHub repo is `gokturkgocen/EqLume`.
 
 Per track, resolves a preset in this order:
 1. **Pre-fetch cache** — Spotify/YT Music queue lookahead resolved the next track already → instant.
-2. **Catalog** (`resolveGenre`) — best source first:
-   - **MusicBrainz** (`MusicBrainzService`, primary): community genre votes WITH counts,
+2. **Classical work titles** (`looksLikeClassicalWork`) — offline, before any lookup, because on a
+   classical upload the artist field holds a performer no catalog has heard of while the title
+   states the piece exactly. Qualifies on an opus/thematic-catalogue number (`Op. 9`, `BWV 846`,
+   `K. 331` — single-letter catalogues require their period, a bare "d 2" is anything else), or on
+   a classical form word TOGETHER WITH a movement number or a stated tonality. The tonality alone
+   is not enough: "In A Major Way" is a soul album. Tag marker `♯` → source "eser adı / work title".
+3. **Catalog** (`resolveGenre`) — best source first:
+   - **MusicBrainz album votes** (`albumGenres`, tried first): the release group's own genre votes.
+     Artist votes describe a career, which is wrong whenever one record departs from it — Tame
+     Impala's artist votes are psychedelic rock 13 / alternative rock 5 / indie rock 3, so every
+     track resolved to rock, but "Dracula" is on *Deadbeat*, whose album votes are dance-pop 3 plus
+     house / tech house / techno / electronic → EDM. Two requests (recording search →
+     release-group detail), cached per artist+title. Only a **plain studio album** counts:
+     primary-type `Album` with NO secondary type, since "Dracula" also sits on "Now That's What I
+     Call Music! 123", "Bravo Hits 132", remix singles and DJ-mixes, whose votes describe the
+     package. `tags` are NOT used as a fallback here the way they are for artists — release-group
+     tags are full of non-genres ("plattentests.de", "offizielle charts", "5+ wochen").
+     Album coverage is thinner than artist coverage (Currents has no album votes at all), so this
+     is a preference, not a replacement.
+   - **MusicBrainz artist votes** (`artistGenres`): community genre votes WITH counts,
      count-weighted into a family via `mapWeightedGenresToPreset` + `genreKeywordRules`. Free,
      no API key (descriptive User-Agent + ≤1 req/s throttle), cached per artist. Accurate at the
      artist level where iTunes mislabels (Buckethead→"Electronic", Dire Straits→"Pop" are both
      fixed → metal / rock). Detection tag carries a `♪` marker (shown as source "MusicBrainz").
+     The displayed genre name is the strongest vote INSIDE the winning family, not the strongest
+     vote overall — otherwise the label contradicts the preset beside it (Deadbeat leads with
+     `dance-pop` while its house/techno votes add up to EDM).
    - **iTunes** Search API genre (fallback), WITH `artistNamesRoughlyMatch` verification to reject
      confident wrong matches. Detection tag has no marker → source "katalog".
    - **NOT Spotify**: Spotify removed `genres`/followers/popularity from its Web API in 2024
@@ -115,9 +136,25 @@ Per track, resolves a preset in this order:
    outrank the original ("Kenan Ayık – Gül Tükendi (feat. Kıvırcık Ali)" → Hip-Hop/Rap); the
    artist check then rejected it and the whole lookup failed. It now fetches 5 and picks the first
    result whose artist actually matches (`artistNamesRoughlyMatch`), falling back to the top hit.
-3. **Audio-content classifier** (catalog miss) — deferred ~4.5s so the analysis ring fills with
+   **A second three-fault pile-up made a Chopin nocturne come out as METAL** — same shape, all
+   three fixed, and the middle one is the reusable lesson. (a) The bare-dash split cut a musical
+   key: "Chopin: Nocturne in E-flat Major, Op. 9 No. 2" split at `E-flat`, leaving the fragment
+   "Chopin: Nocturne in E" to be looked up as an artist. It now refuses to split when the text just
+   left of the dash is a single letter. (b) `artistNamesRoughlyMatch` accepted an UNANCHORED
+   substring, so "Nocturne" — a Dallas metal/industrial band, third hit at score 76 — matched that
+   fragment and beat the score-100 "Fryderyk Chopin" at the top of the same result set. Partial
+   matches are now anchored AND directional: when the name we want is the shorter one it may be a
+   prefix or a suffix of the candidate ("Chopin" in "Fryderyk Chopin"), but when the CANDIDATE is
+   shorter it may only be a prefix, which is what admits "Sezen Aksu" for "Sezen Aksu feat. X"
+   while rejecting a band name buried mid-string ("Helmer" in "Johannes Helmer Pedersen").
+   (c) `searchArtistMBID` ended in `?? obj.artists.first`, so MusicBrainz could never answer "I
+   don't know this artist" — any junk query was handed a stranger's genres at full confidence.
+   That fallback is gone; unknown → `.noMatch`. Its one replacement is narrow: the TOP hit is
+   accepted if its surname token matches, because MB indexes aliases and transliterations our
+   normalizer cannot ("Frédéric Chopin" → "Fryderyk Chopin", where only "Chopin" survives).
+4. **Audio-content classifier** (catalog miss) — deferred ~4.5s so the analysis ring fills with
    the current track, then Discogs-EffNet CoreML classifies from the audio itself. Catalog-independent.
-4. Default → pop.
+5. Default → pop.
 
 Now-playing sources: Spotify Web API (OAuth, has queue pre-fetch), YouTube Music (browser DOM
 via AppleScript `execute javascript`, has queue pre-fetch), Apple Music / browsers (AppleScript).
@@ -144,6 +181,9 @@ fallback). `buildAppleScript(for:runningJS:)` is the shared injector for both re
 - Audio path: `AudioEngine` IOProc downmixes tapped pre-EQ audio to mono into `AnalysisRingBuffer`
   (6s); `GenreClassifier` snapshots 4s, resamples to 16k (AVAudioConverter), runs inference off
   the main actor, aggregates 400 styles → `PresetFamily` by summed probability.
+- **Discogs parents lie about one style** (`PresetFamily.fromDiscogsStyle`): `Modern Classical`
+  is filed under the **Electronic** parent, so parent-genre mapping sent solo piano to EDM and
+  lifted its bass. The `electronic` branch checks for a `classical` style first.
 - **Voice grab-bag guard** (`GenreClassifier.classify`): 16 styles (13 `Non-Music---*` + 3
   `Children's---*`) all map to `.voice`. Summed-probability aggregation lets a sparse/slowed/
   downtempo *music* track leak small probability into many of them and win `.voice` even when no

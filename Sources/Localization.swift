@@ -69,15 +69,25 @@ enum L {
 /// localize the source label instead of sniffing substrings out of a rendered line.
 enum DetectionSourceKind {
     case musicBrainz   // MusicBrainz artist genres ("♪")
+    case workTitle     // the title itself named a classical work ("♯")
     case catalog       // iTunes / Music.app genre
     case analyzing     // audio-content classifier pending
     case analyzed      // audio-content classifier done
     case prefetch      // came from the Spotify/YT queue pre-fetch cache
 
+    /// Derives the source from the marker the resolver put in its detection tag, so the
+    /// call sites don't each re-sniff the string.
+    static func forTag(_ tag: String) -> DetectionSourceKind {
+        if tag.contains("♪") { return .musicBrainz }
+        if tag.contains("♯") { return .workTitle }
+        return .catalog
+    }
+
     /// Localized label shown as the small "· <source>" suffix on the genre line.
     var label: String {
         switch self {
         case .musicBrainz: return "MusicBrainz"
+        case .workTitle:   return L.t("work title", "eser adı")
         case .catalog:     return L.t("catalog", "katalog")
         case .analyzing:   return L.t("analyzing…", "analiz…")
         case .analyzed:    return L.t("analysis", "analiz")
