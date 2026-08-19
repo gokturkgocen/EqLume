@@ -79,6 +79,10 @@ final class StatusBarController: NSObject, NSWindowDelegate {
         vm.onConnectSpotify = { [weak self] in self?.spotifyMenu() }
         #endif
         vm.onTestAutomation = { [weak self] in self?.testPermissions() }
+        vm.onPinTrack = { [weak self] in self?.pinCurrentTrack() }
+        #if !APP_STORE
+        vm.onShowDetection = { [weak self] in self?.showDetectionDetail() }
+        #endif
         vm.onTestYTMusic    = { [weak self] in self?.testYouTubeMusic() }
         vm.onToggleLogin    = { [weak self] in self?.toggleLoginItem() }
         vm.onSetLanguage    = { [weak self] lang in self?.setLanguage(lang) }
@@ -322,6 +326,15 @@ final class StatusBarController: NSObject, NSWindowDelegate {
         vm.detectionSourceKind = autoSelector.enabled ? autoSelector.lastSourceKind : nil
         vm.nowArtist = autoSelector.enabled ? (autoSelector.lastArtist ?? "") : ""
         vm.nowTitle  = autoSelector.enabled ? (autoSelector.lastTitle ?? "") : ""
+        if let artist = autoSelector.lastArtist, let title = autoSelector.lastTitle,
+           autoSelector.lastStatus == .playing {
+            vm.canPinTrack = true
+            vm.pinnedPresetName = PinnedPresets.presetName(artist: artist, title: title)
+                .map { EQPreset.displayName(forName: $0) }
+        } else {
+            vm.canPinTrack = false
+            vm.pinnedPresetName = nil
+        }
         #if !APP_STORE
         vm.genreLabelOverride = autoSelector.enabled ? autoSelector.lastGenreLabelOverride : nil
         #endif
@@ -405,6 +418,74 @@ final class StatusBarController: NSObject, NSWindowDelegate {
                 NSWorkspace.shared.open(url)
             }
         }
+    }
+
+    #if !APP_STORE
+    /// Shows the resolver's own account of the current track. `lastDetection` already
+    /// records which source answered and, for the audio classifier, the single most
+    /// probable Discogs style with its confidence — it was just never displayed, so a
+    /// wrong genre could only be diagnosed by re-deriving the whole chain by hand.
+    private func showDetectionDetail() {
+        let loc = Loc.shared
+        let alert = NSAlert()
+        alert.messageText = loc.t("Why this genre?", "Bu tür neden seçildi?")
+        alert.informativeText = autoSelector.lastDetection + loc.t(
+            """
+
+
+            Reading it: `[name ♪]` came from MusicBrainz votes, `[name ♯]` from a classical \
+            work title, a bare `[name]` from the iTunes catalog, and `[style · NN%]` is the \
+            audio classifier naming its single most probable Discogs style.
+            """,
+            """
+
+
+            Okuma: `[ad ♪]` MusicBrainz oylarından, `[ad ♯]` klasik eser başlığından, \
+            işaretsiz `[ad]` iTunes kataloğundan gelir; `[stil · %NN]` ise ses \
+            sınıflandırıcının en olası tek Discogs stilidir.
+            """)
+        alert.runModal()
+    }
+    #endif
+
+    /// Pins the playing track to a preset the user picks, or clears an existing pin.
+    ///
+    /// The picker is an NSAlert with a popup button rather than a grid in the popover: the
+    /// manual chip grid was removed for being cluttered, and this is a rare, deliberate
+    /// action that does not need to sit on screen the rest of the time.
+    private func pinCurrentTrack() {
+        guard let artist = autoSelector.lastArtist, let title = autoSelector.lastTitle else { return }
+        let loc = Loc.shared
+        let current = PinnedPresets.presetName(artist: artist, title: title)
+
+        let alert = NSAlert()
+        alert.messageText = loc.t("Pin a preset to this track", "Bu parçaya preset sabitle")
+        alert.informativeText = "\(artist) — \(title)\n\n" + loc.t(
+            "A pinned track always uses this curve. Detection is skipped for it entirely.",
+            "Sabitlenen parça her zaman bu eğriyi kullanır. O parça için tespit tamamen atlanır.")
+
+        let popup = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 260, height: 25))
+        let presets = EQPreset.builtIn
+        popup.addItems(withTitles: presets.map(\.displayName))
+        popup.selectItem(at: presets.firstIndex { $0.name == (current ?? audio.activePreset.name) } ?? 0)
+        alert.accessoryView = popup
+
+        alert.addButton(withTitle: loc.t("Pin", "Sabitle"))
+        alert.addButton(withTitle: loc.t("Cancel", "Vazgeç"))
+        if current != nil { alert.addButton(withTitle: loc.t("Remove pin", "Sabitlemeyi kaldır")) }
+
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            let chosen = presets[max(0, popup.indexOfSelectedItem)]
+            PinnedPresets.set(chosen.name, artist: artist, title: title)
+        case .alertThirdButtonReturn:
+            PinnedPresets.set(nil, artist: artist, title: title)
+        default:
+            return
+        }
+        // Re-resolve immediately instead of waiting for the next track change.
+        autoSelector.forgetCurrentTrack()
+        syncVM()
     }
 
     private func testYouTubeMusic() {

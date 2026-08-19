@@ -33,6 +33,10 @@ final class EQViewModel: ObservableObject {
     @Published var nowArtist: String = ""
     @Published var nowTitle: String = ""
     @Published var detectionSourceKind: DetectionSourceKind? = nil
+    /// Localized name of the preset pinned to the playing track, nil when it isn't pinned.
+    @Published var pinnedPresetName: String? = nil
+    /// A track has to be readable before there is anything to pin it to.
+    @Published var canPinTrack: Bool = false
     @Published var detectionStatus: DetectionStatus = .idle
     @Published var detectionSourceApp: String = ""
     #if !APP_STORE
@@ -85,6 +89,8 @@ final class EQViewModel: ObservableObject {
     var onConnectSpotify: () -> Void = {}
     var onTestAutomation: () -> Void = {}
     var onTestYTMusic: () -> Void = {}
+    var onShowDetection: () -> Void = {}
+    var onPinTrack: () -> Void = {}
     var onToggleLogin: () -> Void = {}
     var onSetLanguage: (AppLanguage) -> Void = { _ in }
     var onToggleCurrentOutput: () -> Void = {}

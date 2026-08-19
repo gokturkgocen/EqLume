@@ -550,6 +550,19 @@ struct PopoverView: View {
             #endif
             settingsRow(icon: "lock.shield", title: loc.t("Test automation permissions", "Otomasyon izinlerini test et"), action: vm.onTestAutomation)
             settingsRow(icon: "play.rectangle", title: loc.t("Test YT Music access", "YT Music erişimini test et"), action: vm.onTestYTMusic)
+            #if !APP_STORE
+            settingsRow(icon: "questionmark.circle",
+                        title: loc.t("Why this genre?", "Bu tür neden seçildi?"),
+                        action: vm.onShowDetection)
+            #endif
+            if vm.canPinTrack {
+                settingsRow(icon: vm.pinnedPresetName == nil ? "pin" : "pin.fill",
+                            title: vm.pinnedPresetName.map {
+                                loc.t("Pinned: \($0)", "Sabit: \($0)")
+                            } ?? loc.t("Pin this track…", "Bu parçayı sabitle…"),
+                            tint: vm.pinnedPresetName == nil ? .white : accent,
+                            action: vm.onPinTrack)
+            }
             settingsRow(icon: vm.loginEnabled ? "checkmark.circle.fill" : "power",
                         title: loc.t("Launch at Login", "Açılışta Başlat"), tint: vm.loginEnabled ? accent : .white,
                         action: vm.onToggleLogin)

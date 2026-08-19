@@ -67,7 +67,11 @@ final class GenreClassifier {
     }
 
     /// Classify mono audio at `inputRate`. Returns nil if audio too short or inference fails.
-    func classify(samples: [Float], inputRate: Double) -> Result? {
+    ///
+    /// `allowVoice: false` forbids the `.voice` family outright. Callers pass it when the
+    /// audio is coming from a music-only player, where a spoken-word verdict is always a
+    /// misfire — see `AutoPresetSelector.musicOnlyBundles`.
+    func classify(samples: [Float], inputRate: Double, allowVoice: Bool = true) -> Result? {
         guard let audio16k = Self.resampleTo16k(samples, inputRate: inputRate) else { return nil }
         let need = (MelSpectrogram.patchFrames - 1) * MelSpectrogram.hop + MelSpectrogram.frameSize
         guard audio16k.count >= need else { return nil }
@@ -136,7 +140,10 @@ final class GenreClassifier {
         // fall back to the best MUSIC family.
         var chosenFamily = sumWinner
         var chosenScore = sumWinnerScore
-        var shouldRejectAggregateWinner = sumWinner == .voice && topFamily != .voice
+        // `!allowVoice` rejects the voice family however confident it looks: a string
+        // quartet reading as "Non-Music---Field Recording" put the single top style inside
+        // the voice family, which is exactly the case the top-style test below lets through.
+        var shouldRejectAggregateWinner = sumWinner == .voice && (!allowVoice || topFamily != .voice)
         #if !APP_STORE
         shouldRejectAggregateWinner = shouldRejectAggregateWinner
             || (sumWinner == .world && topFamily != .world)

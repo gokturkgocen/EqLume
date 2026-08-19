@@ -49,6 +49,14 @@ final class AutoPresetSelector {
     private(set) var lastGenreLabelOverride: String?
     #endif
 
+    /// Drops the memo of what is playing so the next poll resolves it again. Used after a
+    /// pin changes, so the new curve lands without waiting for the track to change.
+    func forgetCurrentTrack() {
+        lastTrackIdentity = nil
+        nextTrackID = nil
+        nextTrackPreset = nil
+    }
+
     /// Record a resolved now-playing track structurally so the view can localize it.
     private func markResolved(app: String, artist: String, title: String, kind: DetectionSourceKind?) {
         lastSourceApp = app; lastArtist = artist; lastTitle = title
@@ -139,6 +147,11 @@ final class AutoPresetSelector {
     /// Returns nil when the catalog can't confidently resolve → caller defers to
     /// the audio-content classifier. Used for both now-playing and prefetch.
     private func catalogPreset(artist: String, title: String, genreHint: String?) async -> (EQPreset, String)? {
+        // 0. A pin is the user's own answer for this exact track, so it outranks everything
+        //    below it — including a genre hint the player supplied.
+        if let pinned = PinnedPresets.preset(artist: artist, title: title) {
+            return (pinned, "[\(L.t("pinned", "sabit")) \u{2605}]")
+        }
         #if !APP_STORE
         if Self.isKnownArabeskArtist(artist) {
             return (.arabesk, "[Arabesk]")
@@ -299,7 +312,16 @@ final class AutoPresetSelector {
     /// tail), then classify and apply. Keyed to `identity` so a track change cancels it.
     private var audioClassifyTask: Task<Void, Never>?
 
-    private func scheduleAudioClassification(identity: String, displayPrefix: String) {
+    /// Players that only ever hold a music library. On these the audio classifier is not
+    /// allowed to answer `.voice`, because there it is always a misfire: the 16 Non-Music
+    /// and Children's Discogs styles are where sparse acoustic material leaks — a string
+    /// quartet reads as room tone — and genuine speech on these services carries a catalog
+    /// genre that resolves long before analysis ever runs. A browser tab is NOT in this set:
+    /// a YouTube talk really can be speech, so it keeps the voice verdict.
+    static let musicOnlyBundles: Set<String> = ["com.spotify.client", "com.apple.Music"]
+
+    private func scheduleAudioClassification(identity: String, displayPrefix: String,
+                                             allowVoice: Bool) {
         audioClassifyTask?.cancel()
         let prefix = displayPrefix
         audioClassifyTask = Task { [weak self] in
@@ -316,7 +338,7 @@ final class AutoPresetSelector {
                 return
             }
             let result = await Task.detached(priority: .userInitiated) {
-                clf.classify(samples: samples, inputRate: rate)
+                clf.classify(samples: samples, inputRate: rate, allowVoice: allowVoice)
             }.value
             guard !Task.isCancelled, self.lastTrackIdentity == identity else { return }
             #if !APP_STORE
@@ -407,7 +429,8 @@ final class AutoPresetSelector {
             } else {
                 lastDetection = "\(prefix) [katalog yok · ses analizi…]"
                 markResolved(app: app, artist: current.artist, title: current.title, kind: .analyzing)
-                scheduleAudioClassification(identity: identity, displayPrefix: prefix)
+                scheduleAudioClassification(identity: identity, displayPrefix: prefix,
+                                            allowVoice: false)   // YT Music is music only
             }
 
             // Pre-resolve the next track if we have it.
@@ -476,7 +499,8 @@ final class AutoPresetSelector {
                 // 3. Catalog miss → defer to audio-content classification.
                 lastDetection = "\(prefix) [katalog yok · ses analizi…]"
                 markResolved(app: "Spotify", artist: item.primaryArtist, title: item.name, kind: .analyzing)
-                scheduleAudioClassification(identity: trackID, displayPrefix: prefix)
+                scheduleAudioClassification(identity: trackID, displayPrefix: prefix,
+                                            allowVoice: false)   // Spotify is music only
             }
             onStatusChange?()
 
@@ -544,7 +568,9 @@ final class AutoPresetSelector {
             } else {
                 lastDetection = "\(prefix) [katalog yok · ses analizi…]"
                 markResolved(app: app, artist: track.artist, title: track.title, kind: .analyzing)
-                scheduleAudioClassification(identity: track.identity, displayPrefix: prefix)
+                scheduleAudioClassification(
+                    identity: track.identity, displayPrefix: prefix,
+                    allowVoice: !Self.musicOnlyBundles.contains(track.sourceBundleID))
             }
         } else if let sourceBundle {
             let preset = mapBundleToPreset(sourceBundle)

@@ -68,6 +68,7 @@ enum L {
 /// How the current track's preset was resolved — carried structurally so the view can
 /// localize the source label instead of sniffing substrings out of a rendered line.
 enum DetectionSourceKind {
+    case pinned        // the user pinned this exact track ("★")
     case musicBrainz   // MusicBrainz artist genres ("♪")
     case workTitle     // the title itself named a classical work ("♯")
     case catalog       // iTunes / Music.app genre
@@ -78,6 +79,7 @@ enum DetectionSourceKind {
     /// Derives the source from the marker the resolver put in its detection tag, so the
     /// call sites don't each re-sniff the string.
     static func forTag(_ tag: String) -> DetectionSourceKind {
+        if tag.contains("★") { return .pinned }
         if tag.contains("♪") { return .musicBrainz }
         if tag.contains("♯") { return .workTitle }
         return .catalog
@@ -86,6 +88,7 @@ enum DetectionSourceKind {
     /// Localized label shown as the small "· <source>" suffix on the genre line.
     var label: String {
         switch self {
+        case .pinned:      return L.t("pinned", "sabit")
         case .musicBrainz: return "MusicBrainz"
         case .workTitle:   return L.t("work title", "eser adı")
         case .catalog:     return L.t("catalog", "katalog")

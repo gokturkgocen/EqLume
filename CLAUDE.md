@@ -9,7 +9,8 @@ MIT for the app's own code; the bundled ML model is CC BY-NC-SA 4.0 (see LICENSE
 `CFBundleName` / `CFBundleDisplayName`, README, App Store listing, list submissions, marketing.
 Everything a machine keys on keeps the old single-capital form and must NOT be renamed:
 `CFBundleIdentifier` = `com.gokturkgocen.Eqlume`, `CFBundleExecutable` = `Eqlume`, the
-UserDefaults key prefix `Eqlume.*` (`Eqlume.language`, `Eqlume.enabledOutputDeviceUIDs`),
+UserDefaults key prefix `Eqlume.*` (`Eqlume.language`, `Eqlume.enabledOutputDeviceUIDs`,
+`Eqlume.pinnedPresets`),
 and the built bundle path `build/Eqlume.app`. Changing the bundle id would orphan the App
 Store record and every stored preference; changing a defaults key would silently reset the
 user's settings. The GitHub repo is `gokturkgocen/EqLume`.
@@ -87,6 +88,14 @@ user's settings. The GitHub repo is `gokturkgocen/EqLume`.
 ## Auto preset selection (`AutoPresetSelector.swift`)
 
 Per track, resolves a preset in this order:
+0. **Pinned track** (`PinnedPresets`, `Eqlume.pinnedPresets`) — an (artist, title) → preset
+   name map the user sets from the settings panel. It outranks EVERYTHING below, including a
+   genre hint the player supplied, and skips the whole chain. Detection is a guess by
+   construction, so for the few records played on repeat this is where the answer gets stated
+   once instead of being re-decided every play. Key is the lowercased `artist||title` the
+   player reports, so a different upload of the same song is a different pin. The stored value
+   is `EQPreset.name` (the stable key, not `displayName`), and a name that no longer exists
+   resolves to nil rather than crashing. Tag marker `★` → source "sabit / pinned".
 1. **Pre-fetch cache** — Spotify/YT Music queue lookahead resolved the next track already → instant.
 2. **Classical work titles** (`looksLikeClassicalWork`) — offline, before any lookup, because on a
    classical upload the artist field holds a performer no catalog has heard of while the title
@@ -184,6 +193,16 @@ fallback). `buildAppleScript(for:runningJS:)` is the shared injector for both re
 - **Discogs parents lie about one style** (`PresetFamily.fromDiscogsStyle`): `Modern Classical`
   is filed under the **Electronic** parent, so parent-genre mapping sent solo piano to EDM and
   lifted its bass. The `electronic` branch checks for a `classical` style first.
+- **Voice is refused outright on music-only players** (`classify(allowVoice:)` +
+  `AutoPresetSelector.musicOnlyBundles`). The guard below only rejects `.voice` when no single
+  voice style is on top — which still let a string-heavy instrumental classical track come out
+  as "Vokal / Diyalog", because the model put a `Non-Music---*` style on top and cleared the
+  confidence bar. Sparse acoustic material genuinely reads as room tone to this model. So on
+  Spotify, Apple Music and YT Music the classifier may not answer `.voice` at all and falls to
+  the best music family; a browser tab keeps it, since a YouTube talk really can be speech.
+  Nothing is lost: real speech on those services carries a catalog genre that resolves long
+  before analysis runs. Note this can end in `Genre uncertain` + the neutral preset rather than
+  a named genre — which is the honest outcome when the model is confused.
 - **Voice grab-bag guard** (`GenreClassifier.classify`): 16 styles (13 `Non-Music---*` + 3
   `Children's---*`) all map to `.voice`. Summed-probability aggregation lets a sparse/slowed/
   downtempo *music* track leak small probability into many of them and win `.voice` even when no
@@ -246,6 +265,16 @@ Menu-bar icon opens an `NSPopover` hosting `PopoverView` (SwiftUI via `NSHosting
 - Now-playing card, auto-preset toggle, preset chips, and an expandable settings panel
   (Spotify connect, automation/YT tests, login-at-start, quit) — NOT a SwiftUI `Menu` (renders
   unreliably in popovers); a `gearshape` toggle reveals an inline button panel.
+- **"Why this genre?"** (`!APP_STORE`, settings panel → `showDetectionDetail`) shows
+  `AutoPresetSelector.lastDetection`, which records which source answered and, for the audio
+  classifier, its single most probable Discogs style with the confidence. That string was
+  computed and written on every resolve but **read nowhere**, so a wrong genre could only be
+  diagnosed by re-deriving the entire chain by hand against the live APIs. Legend is in the
+  alert itself: `[name ♪]` MusicBrainz, `[name ♯]` classical work title, `[name ★]` pinned,
+  bare `[name]` iTunes, `[style · NN%]` the classifier.
+- **Pinning UI** is an `NSAlert` + `NSPopUpButton`, not a grid in the popover — the manual chip
+  grid was removed for being cluttered, and pinning is a rare deliberate act that should not
+  occupy screen space the rest of the time.
 - **Only ONE preset chip is shown — `EQPreset.natural` (Chu II — Doğal/Harman).** The other 20
   presets still exist and are used by the auto engine, but the manual chip grid was intentionally
   removed (user found it cluttered/ugly): the active preset — including whatever auto picks per

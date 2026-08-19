@@ -80,24 +80,38 @@ actor GenreLookupService {
 ///   • `wanted` is the shorter one — a short form of a fuller catalog name ("Chopin" vs
 ///     "Fryderyk Chopin", "Beatles" vs "The Beatles") → prefix OR suffix.
 ///   • `candidate` is the shorter one — a real name with trailing noise in what's playing
-///     ("Sezen Aksu" vs "Sezen Aksu feat. X") → prefix ONLY.
+///     ("Sezen Aksu" vs "Sezen Aksu feat. X") → it must be a whole-token prefix, and a
+///     SINGLE-token one must additionally be followed by a collaboration word. One token is
+///     weak evidence because plenty of acts are named after an ordinary word: MusicBrainz's
+///     Dutch trio "Timeless" was answering for the artist "Timeless Serenade", and only
+///     stayed harmless because that entry happens to carry no genre votes. Two tokens are
+///     strong enough on their own, which keeps "Calvin Harris" matching "Calvin Harris &
+///     Dua Lipa" — a collaboration billed with an ampersand or a comma, not a "feat.".
 /// An UNANCHORED substring, which this used to accept, is what let a Dallas metal band
 /// named "Nocturne" match the query "Chopin: Nocturne in E" and give a piano nocturne the
 /// metal preset — and, in the same way, "Helmer" match "Johannes Helmer Pedersen".
 func artistNamesRoughlyMatch(_ candidate: String, _ wanted: String) -> Bool {
-    let na = normalizedNameTokens(candidate).joined()
-    let nb = normalizedNameTokens(wanted).joined()
+    let ta = normalizedNameTokens(candidate)
+    let tb = normalizedNameTokens(wanted)
+    let na = ta.joined(), nb = tb.joined()
     guard !na.isEmpty, !nb.isEmpty else { return false }
     if na == nb { return true }
     // Require the shorter to be at least 4 chars to avoid trivial prefix false-positives
     // ("no1" in "no1xyz").
-    let candidateIsShorter = na.count <= nb.count
-    let shorter = candidateIsShorter ? na : nb
-    let longer  = candidateIsShorter ? nb : na
-    guard shorter.count >= 4 else { return false }
-    if longer.hasPrefix(shorter) { return true }
-    return !candidateIsShorter && longer.hasSuffix(shorter)
+    guard min(na.count, nb.count) >= 4 else { return false }
+    if na.count <= nb.count {
+        guard ta.count < tb.count, Array(tb.prefix(ta.count)) == ta else { return false }
+        return ta.count >= 2 || collaborationWords.contains(tb[ta.count])
+    }
+    // What we're looking for is the shorter name: a short form of a fuller catalog name.
+    return na.hasPrefix(nb) || na.hasSuffix(nb)
 }
+
+/// Words that introduce a guest or co-billing, i.e. the only thing allowed to follow a
+/// complete artist name and still describe the same artist.
+private let collaborationWords: Set<String> = [
+    "feat", "feats", "ft", "featuring", "with", "and", "x", "vs", "versus", "presents", "pres",
+]
 
 /// True when two names end in the same surname token (≥4 chars). Used as a last resort
 /// for a search engine's own top-ranked hit, where an alias or a transliteration can
