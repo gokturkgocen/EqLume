@@ -56,6 +56,7 @@ enum Theme {
         #if !APP_STORE
         if name == EQPreset.arabesk.name { return .acoustic }
         #endif
+        if name == EQPreset.turkishFolk.name { return .world }
         for f in PresetFamily.allCases where f.preset.name == name { return f }
         return nil
     }

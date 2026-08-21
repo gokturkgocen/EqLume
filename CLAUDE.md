@@ -287,6 +287,63 @@ Menu-bar icon opens an `NSPopover` hosting `PopoverView` (SwiftUI via `NSHosting
 - Build adds `-framework SwiftUI`. Offline UI verification: `ImageRenderer` collapses `ScrollView`
   content, so use real AppKit `NSHostingView.cacheDisplay` to snapshot the popover faithfully.
 
+## Measurement-driven correction (`!APP_STORE`, in progress)
+
+Why it exists: the genre path has a **hard ceiling** on this user's library, and the ceiling is
+structural, not a bug. Discogs-EffNet's 400 styles contain **no** Turkish, Anatolian,
+Azerbaijani, Caucasian or Middle-Eastern label (verified against `discogs_styles.txt`), so the
+classifier cannot name this material even in principle; its closest answers are `Folk` →
+`.acoustic` or `.world`, **both of which carry no delta at all**. Meanwhile the catalogs are
+either empty (MusicBrainz has one vote on Neşet Ertaş and no entry at all for many artists) or
+confidently wrong (Apple files the Azerbaijani xalq mahnısı "Evlərinin önü yonca" as **Pop**,
+with the artist name matching exactly, so the verification that rejects bad hits waves it
+through). A violinist with no catalog presence anywhere is unreachable by every naming path
+the app has. So: stop naming the music, and correct the recording instead.
+
+- `SpectrumMeasurement` — long-term average spectrum of the PRE-EQ tap, accumulated per artist
+  across sessions into `~/Library/Application Support/Eqlume/spectrum-measurements.json`.
+  8192-point FFT (5.9 Hz bins at 48 kHz) because at 2048 there are not enough bins inside one
+  ERB down at 50 Hz for the low end to be measurable. Sampled 4 s every 5 s, ~46 frames per
+  snapshot. A sample-rate change **resets** it: bins are only comparable on one frequency axis.
+  Only accumulates while `audio.isRunning`, i.e. headphones in the jack.
+- `AdaptiveCorrection` — turns that spectrum into at most 3 peaking bands. **No external
+  reference**, and that is the whole point: every documented failure mode of automatic spectral
+  matching (arbitrary reference choice, loudness dependence, heavy-handedness, song-specific
+  nonsense) comes from having one. Here the reference is the recording's own spectrum smoothed
+  over 3× the ear's ERB, and the anomaly is `ERB-smoothed − 3×ERB-smoothed`. Subtracting a
+  smoothed copy of a curve from itself cancels any common offset, so playback level provably
+  cannot influence the result (there is a test for this).
+
+  Four things were learned the hard way and each is now a named guard:
+  1. **One scale is not enough.** With the reference smoothed at exactly one ERB, a resonance
+     about one ERB wide cancels most of its own detection — a 7 dB synthetic resonance showed
+     up as 1.15 dB. Hence 1 ERB vs 3 ERB.
+  2. **Nearest-bin log resampling makes a staircase.** At 48 Hz several 1/24-octave cells fall
+     inside one FFT bin; every step of that staircase is curvature, and a band-pass operator
+     reports curvature as resonance. It invented filters at 48 and 78 Hz on a spectrum with
+     none. Cells with no bin of their own are interpolated.
+  3. **Zeroing the anomaly outside the band manufactures an edge.** The first surviving point
+     then reads as a peak against that step — a −3 dB filter at exactly the 100 Hz boundary.
+     The band restriction applies to candidate SELECTION only; the curve stays intact.
+  4. **Curvature in the tilt is not a resonance.** The knee where a recording's bass rolloff
+     begins produces a genuine broad lobe. It is rejected by width: an anomaly wider than 60 %
+     of the reference window is part of the timbre that window defines.
+
+  Bounds, all deliberate: cuts to −3 dB but boosts only to +1.5 (a notch does not ring, and
+  this app corrects by cutting); 0.2–1.5 octave bandwidth; ≥0.5 octave between filters; gain
+  traded away as a filter narrows (AutoEq's high-Q-high-gain penalty); detection band
+  100 Hz–10 kHz (below ~100 Hz the ERB is most of an octave, so resonance and timbre stop
+  being separable in principle); ≥2000 frames and ≥3 distinct titles before proposing
+  anything (a single voice's LTAS stabilises in 25–30 s, music is far less stationary).
+  Every proposal is verified against the biquad magnitude it will actually realise
+  (`FrequencyResponse`) and rejected if it does not reduce the anomaly.
+
+- **Deliberately NOT wired to the audio path yet.** The algorithm is validated against
+  synthetic spectra with known injected resonances (20 assertions: finds a 0.15-octave
+  resonance and a hiss shelf, ignores a 2-octave hump, a pure tilt and a steep rolloff, is
+  level-invariant, respects every bound). It has never been run on a real measurement, because
+  there was no data yet. Read the JSON first, review the proposals, then wire application.
+
 ## Distribution — Mac App Store
 
 - **Live on the Mac App Store as "EqLume" 1.0, free, since 2026-07-29.** Verified via

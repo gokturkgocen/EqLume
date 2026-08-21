@@ -299,6 +299,26 @@ extension EQPreset {
 
     static let world = chu("Dünya Müziği", .world)
 
+    /// Anatolian folk led by the bağlama — bozlak and uzun hava (Neşet Ertaş, Muharrem
+    /// Ertaş, Hacı Taşan) and türkü generally.
+    ///
+    /// Engineering judgment, NOT a measurement, and cuts-first on purpose. Three things are
+    /// true of this material and all three point the same way:
+    ///   • The recordings are mostly analog, 1960s–90s. There is almost nothing below
+    ///     ~80 Hz to lift, and plenty of tape hiss above ~6 kHz that must not be lifted.
+    ///   • The bozlak voice is a high, strained, declamatory delivery whose energy piles
+    ///     into 2–3.5 kHz — exactly where the Harman target already puts a presence lift.
+    ///     The two stack, and that stacking is what makes a long listen tiring.
+    ///   • The bağlama's tezene (pick) attack sits in that same region as the hiss.
+    /// So: a little body where the material is genuinely thin, small cuts where it is hot.
+    /// This is a starting point meant to be trimmed by ear (harsh → 2.8 kHz toward −2.5;
+    /// dull → toward −0.5; thin → 250 Hz toward +2), not a finished measurement.
+    static let turkishFolk = chu("Halk / Bozlak / Muğam", .world, delta: [
+        pk(250,  +1.0, q: 0.8),   // bağlama body / chest voice — the bottom octaves are empty
+        pk(2800, -1.5, q: 1.0),   // strained-vocal shout band, stacked on Harman's presence lift
+        pk(7000, -1.5, q: 1.2),   // cassette-era hiss and tezene edge
+    ])
+
     // MARK: Ambient / Indie
 
     static let indie = chu("Indie / Alternatif", .ambient, delta: [
@@ -341,7 +361,7 @@ extension EQPreset {
         // Acoustic
         .acoustic, .jazz, .classical, .blues,
         // World
-        .latin, .reggae, .world,
+        .latin, .reggae, .world, .turkishFolk,
         // Ambient
         .indie, .ambient,
         // Voice
@@ -367,6 +387,7 @@ extension EQPreset {
         "Akustik / Folk / Country":  "Acoustic / Folk / Country",
         "Klasik / Orkestral":        "Classical / Orchestral",
         "Dünya Müziği":              "World Music",
+        "Halk / Bozlak / Muğam":     "Anatolian & Caucasian Folk",
         "Indie / Alternatif":        "Indie / Alternative",
         "Vokal / Diyalog / Podcast": "Vocal / Dialogue / Podcast",
     ]

@@ -156,6 +156,9 @@ final class AutoPresetSelector {
         if Self.isKnownArabeskArtist(artist) {
             return (.arabesk, "[Arabesk]")
         }
+        if Self.isKnownFolkArtist(artist) {
+            return (.turkishFolk, "[\(L.t("folk artist", "halk sanatçısı"))]")
+        }
         #endif
         if let g = genreHint, !g.isEmpty {
             return (mapGenreToPreset(g), "[\(g)]")
@@ -218,19 +221,56 @@ final class AutoPresetSelector {
     }
 
     #if !APP_STORE
-    /// Apple commonly files classic Turkish arabesk/fantezi under the generic
-    /// "Worldwide" storefront bucket. Keep a small, explicit local correction list
-    /// rather than pretending every Turkish artist belongs to the same genre.
-    private static func isKnownArabeskArtist(_ artist: String) -> Bool {
-        let normalized = artist
+    /// Normalizes a Turkish or Azerbaijani name to a bare ASCII-ish key.
+    ///
+    /// Foundation's diacritic folding handles ş/ç/ğ/ö/ü but NOT the two letters that are
+    /// their own characters rather than a base plus a mark: dotless `ı` and Azerbaijani
+    /// schwa `ə`. Both have to be mapped by hand — and until this was written the arabesk
+    /// list below silently failed on exactly those names, because "İbrahim Tatlıses"
+    /// normalized to "ibrahimtatlıses" while the list said "ibrahimtatlises". Two of its
+    /// eleven entries could never match.
+    private static func turkicNameKey(_ name: String) -> String {
+        name
+            .replacingOccurrences(of: "ı", with: "i")
+            .replacingOccurrences(of: "I", with: "i")
+            .replacingOccurrences(of: "ə", with: "e")
+            .replacingOccurrences(of: "Ə", with: "e")
             .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier: "tr_TR"))
             .lowercased()
             .unicodeScalars
             .filter { CharacterSet.alphanumerics.contains($0) }
             .map(String.init)
             .joined()
-        return knownArabeskArtists.contains(normalized)
     }
+
+    /// Apple commonly files classic Turkish arabesk/fantezi under the generic
+    /// "Worldwide" storefront bucket. Keep a small, explicit local correction list
+    /// rather than pretending every Turkish artist belongs to the same genre.
+    private static func isKnownArabeskArtist(_ artist: String) -> Bool {
+        knownArabeskArtists.contains(turkicNameKey(artist))
+    }
+
+    /// Anatolian and Caucasian folk singers the catalogs get wrong in a way no keyword can
+    /// reach: Apple files "Evlərinin önü yonca" — an Azerbaijani xalq mahnısı — under
+    /// **Pop**, with the artist name matching exactly, so the verification that normally
+    /// rejects bad hits passes it through. MusicBrainz simply has no entry for many of them.
+    /// When the catalog is not merely thin but confidently wrong, a name is the only
+    /// signal left. Deliberately a short list of artists actually listened to here, not an
+    /// attempt at a taxonomy.
+    private static func isKnownFolkArtist(_ artist: String) -> Bool {
+        knownFolkArtists.contains(turkicNameKey(artist))
+    }
+
+    private static let knownFolkArtists: Set<String> = [
+        "nesetertas",
+        "muharremertas",
+        "hacitasan",
+        "cetinakdeniz",
+        "asikveysel",
+        "nerminememmedova",
+        "gulyanaqmemmedova",
+        "gulyazmemmedova",
+    ]
 
     private static let knownArabeskArtists: Set<String> = [
         "azerbulbul",
@@ -649,13 +689,17 @@ final class AutoPresetSelector {
             || raw.contains("video game")                                    { return .classical }
         // Blues
         if raw.contains("blues")                                             { return .blues }
-        // Acoustic / Folk / Country / Singer-songwriter / Americana / Bluegrass
+        // Anatolian folk — bozlak / uzun hava / türkü. iTunes labels the whole tradition
+        // simply "Halk", and MusicBrainz's only vote on Neşet Ertaş is "uzun hava", so both
+        // short forms have to match or the material falls through to a preset with no delta.
+        if raw.contains("uzun hava") || raw.contains("bozlak") || raw.contains("halk")
+            || raw.contains("türkü") || raw.contains("turku")
+            || raw.contains("mugham") || raw.contains("muğam") || raw.contains("aşıq")
+            || raw.contains("turkish folk") || raw.contains("azerbaijani folk") { return .turkishFolk }
         #if !APP_STORE
-        // iTunes labels Turkish folk simply "Halk" (and Turkish art music "Sanat"), not
-        // "Türk Halk" — matching only the long form meant these tracks fell through to pop.
-        if raw.contains("arabesk") || raw.contains("halk") || raw.contains("türkü")
-            || raw.contains("turkish folk")                                { return .acoustic }
+        if raw.contains("arabesk")                                         { return .acoustic }
         #endif
+        // Acoustic / Folk / Country / Singer-songwriter / Americana / Bluegrass
         if raw.contains("acoustic") || raw.contains("folk")
             || raw.contains("country") || raw.contains("singer-songwriter")
             || raw.contains("bluegrass") || raw.contains("americana")        { return .acoustic }
@@ -701,6 +745,13 @@ final class AutoPresetSelector {
         (.jazz,      ["jazz", "bossa", "swing", "big band", "bebop"]),
         (.classical, ["classical", "orchestral", "opera", "symphony", "chamber", "soundtrack", "score", "baroque"]),
         (.blues,     ["blues"]),
+        // Anatolian and Caucasian traditional repertoire. Mugham is Azerbaijani modal art
+        // music rather than Turkish folk, but it shares what the curve actually corrects:
+        // a high, ornamented, strained vocal, a plucked-string lead (tar/saz), and an
+        // analog-era catalogue. Split it out if it ever turns out to want its own curve.
+        (.turkishFolk, ["uzun hava", "bozlak", "türkü", "türk halk", "turkish folk", "halk müziği",
+                        "âşık", "asik", "mugham", "muğam", "xalq mahnı", "aşıq",
+                        "azerbaijani folk", "azeri folk"]),
         (.acoustic,  ["folk", "country", "acoustic", "singer-songwriter", "bluegrass", "americana"]),
         (.ambient,   ["ambient", "downtempo", "lo-fi", "lofi", "new age", "chillout", "chillwave", "trip hop", "trip-hop", "vaporwave", "drone"]),
         (.edm,       ["electronic", "techno", "house", "edm", "trance", "electro", "dance", "idm", "synthwave", "big room", "garage"]),
@@ -727,7 +778,8 @@ final class AutoPresetSelector {
         for wg in genres {
             let g = wg.name.lowercased()
             #if !APP_STORE
-            if g.contains("arabesk") || g.contains("türk halk") || g.contains("turkish folk"),
+            // Arabesk only: the folk tags are owned by the `.turkishFolk` rule below.
+            if g.contains("arabesk"),
                let idx = genreKeywordRules.firstIndex(where: { $0.0.name == EQPreset.acoustic.name }) {
                 record(idx, wg)
                 continue

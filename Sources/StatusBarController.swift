@@ -17,6 +17,12 @@ final class StatusBarController: NSObject, NSWindowDelegate {
     private var clickMonitor: Any?
     private let spectrum = SpectrumAnalyzer()
     private var displayTimer: Timer?
+    #if !APP_STORE
+    /// Development instrument — see `SpectrumMeasurement`. Runs whether or not the popover
+    /// is open, because the point is to accumulate across ordinary listening.
+    private let measurement = SpectrumMeasurement()
+    private var measurementTimer: Timer?
+    #endif
     private var lastCurveKey: String = ""
     private var lastLoadedArtURL: String?
 
@@ -40,6 +46,9 @@ final class StatusBarController: NSObject, NSWindowDelegate {
         vm.freqs = FrequencyResponse.frequencyAxis(points: 160)
         recomputeCurve()
         syncVM()
+        #if !APP_STORE
+        startMeasurementTimer()
+        #endif
     }
 
 #if SANDBOX_PROBE
@@ -93,7 +102,12 @@ final class StatusBarController: NSObject, NSWindowDelegate {
         }
         vm.onOpenPrivacy    = { Self.openProjectPage("PRIVACY.md") }
         vm.onOpenLicenses   = { Self.openProjectPage("THIRD-PARTY.md") }
-        vm.onQuit           = { NSApplication.shared.terminate(nil) }
+        vm.onQuit           = { [weak self] in
+            #if !APP_STORE
+            self?.measurement?.save()
+            #endif
+            NSApplication.shared.terminate(nil)
+        }
     }
 
     private static func openProjectPage(_ path: String) {
@@ -223,6 +237,29 @@ final class StatusBarController: NSObject, NSWindowDelegate {
     }
 
     // MARK: Live spectrum
+
+    #if !APP_STORE
+    /// Samples every 5 s: one 4 s window yields ~180 overlapped FFT frames, so a single
+    /// track contributes thousands. Cheap enough to leave on (a 2048-point vDSP FFT is
+    /// microseconds) and it only runs while audio is actually being processed.
+    private func startMeasurementTimer() {
+        let timer = Timer(timeInterval: 5.0, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.tickMeasurement() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        measurementTimer = timer
+    }
+
+    private func tickMeasurement() {
+        guard let measurement, audio.isRunning,
+              autoSelector.lastStatus == .playing,
+              let artist = autoSelector.lastArtist, !artist.isEmpty,
+              let title = autoSelector.lastTitle,
+              let (samples, rate) = audio.snapshotAnalysisAudio(seconds: 4.0) else { return }
+        measurement.accumulate(samples: samples, rate: rate, artist: artist,
+                               title: title, preset: audio.activePreset.name)
+    }
+    #endif
 
     private func startDisplayTimer() {
         stopDisplayTimer()

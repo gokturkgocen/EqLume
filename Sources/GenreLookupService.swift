@@ -113,15 +113,22 @@ private let collaborationWords: Set<String> = [
     "feat", "feats", "ft", "featuring", "with", "and", "x", "vs", "versus", "presents", "pres",
 ]
 
-/// True when two names end in the same surname token (≥4 chars). Used as a last resort
-/// for a search engine's own top-ranked hit, where an alias or a transliteration can
-/// leave nothing else in common — MusicBrainz indexes "Frédéric Chopin" under the Polish
-/// "Fryderyk Chopin", and only "Chopin" survives that.
+/// True when two names plausibly differ only by spelling: the same surname token (≥4 chars)
+/// AND the same initial on the given name. Used as a last resort for a search engine's own
+/// top-ranked hit, where an alias or a transliteration can leave nothing else in common —
+/// MusicBrainz indexes "Frédéric Chopin" under the Polish "Fryderyk Chopin", where only
+/// "Chopin" and the F survive.
+///
+/// The initial is what keeps this from being a surname free-for-all. Without it, searching
+/// "Nərminə Məmmədova" (absent from MusicBrainz) accepted "Gülyanaq Məmmədova" — a different
+/// singer entirely, who does carry genre votes. Common surnames are exactly where a
+/// database's top guess is least trustworthy.
 func artistSurnamesMatch(_ candidate: String, _ wanted: String) -> Bool {
-    guard let a = normalizedNameTokens(candidate).last,
-          let b = normalizedNameTokens(wanted).last,
-          a.count >= 4 else { return false }
-    return a == b
+    let a = normalizedNameTokens(candidate), b = normalizedNameTokens(wanted)
+    guard let surnameA = a.last, let surnameB = b.last,
+          surnameA.count >= 4, surnameA == surnameB,
+          let initialA = a.first?.first, let initialB = b.first?.first else { return false }
+    return initialA == initialB
 }
 
 /// Lowercased, diacritic-folded name tokens with all punctuation dropped.
