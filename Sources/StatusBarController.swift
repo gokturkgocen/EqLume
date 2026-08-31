@@ -28,6 +28,7 @@ final class StatusBarController: NSObject, NSWindowDelegate {
 
     private let presetDefaultsKey = "Eqlume.activePresetName"
     private let autoDefaultsKey   = "Eqlume.autoEnabled"
+    private let didRegisterLoginItemKey = "Eqlume.didRegisterLoginItem"
 
     override init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -40,8 +41,21 @@ final class StatusBarController: NSObject, NSWindowDelegate {
         restoreActivePreset()
         audio.onStateChange = { [weak self] in self?.syncVM() }
         autoSelector.onStatusChange = { [weak self] in self?.syncVM() }
-        if UserDefaults.standard.bool(forKey: autoDefaultsKey) {
-            autoSelector.enabled = true
+        // Auto detection is ON at every launch, deliberately, and not restored from the
+        // last session. The app's whole promise is that the Mac comes up ready with nothing
+        // to switch on — and the one way to lose detection is easy to hit by accident:
+        // picking a preset by hand turns auto off (see `selectPreset`), and the popover
+        // shows exactly one preset chip. That cost four days of silent non-detection once.
+        // The toggle still works; it now lasts for the session rather than forever.
+        autoSelector.enabled = true
+        UserDefaults.standard.set(true, forKey: autoDefaultsKey)
+
+        // Same promise, the other half: be running in the first place. Registered once, so
+        // that a later deliberate "off" from the settings panel is not overridden on the
+        // next launch.
+        if !UserDefaults.standard.bool(forKey: didRegisterLoginItemKey) {
+            try? loginItem.register()
+            UserDefaults.standard.set(true, forKey: didRegisterLoginItemKey)
         }
         vm.freqs = FrequencyResponse.frequencyAxis(points: 160)
         recomputeCurve()

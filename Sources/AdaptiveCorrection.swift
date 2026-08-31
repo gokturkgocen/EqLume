@@ -51,12 +51,12 @@ import Foundation
 /// timbre). Both widths stay tied to the ear's own bandwidth rather than to a chosen number
 /// of octaves.
 ///
-/// One numerical trap, found the same way: resampling onto a log grid by taking the nearest
-/// bin turns the low end into a staircase, because down at 48 Hz several 1/24-octave cells
-/// fall inside one 5.9 Hz FFT bin. Every step of that staircase is curvature, and a
-/// band-pass operator reports curvature as resonance — it invented filters at 48 and 78 Hz
-/// on a spectrum that had none. Cells with no bin of their own are therefore interpolated,
-/// not borrowed.
+/// One numerical trap, found the same way: mapping onto a log grid by taking the nearest bin
+/// turns the low end into a staircase, because down at 48 Hz several 1/24-octave cells fall
+/// inside one 5.9 Hz FFT bin. Every step of that staircase is curvature, and a band-pass
+/// operator reports curvature as resonance — it invented filters at 48 and 78 Hz on a
+/// spectrum that had none. `SpectrumMeasurement` interpolates those cells rather than
+/// borrowing, and hands over a curve already on this grid.
 ///
 /// ## Fitting
 ///
@@ -145,17 +145,20 @@ enum AdaptiveCorrection {
 
     // MARK: The pipeline
 
-    /// `meanDB` is mean power per FFT bin in dB, as written by `SpectrumMeasurement`.
-    /// (Mean power in dB and a magnitude response in dB are the same quantity — 10·log10 of
-    /// power is 20·log10 of magnitude — so no rescaling is needed.)
-    static func propose(meanDB: [Float], sampleRate: Double, fftSize: Int,
-                        frames: Int, distinctTitles: Int) -> Proposal? {
+    /// `meanDB` is mean power per grid cell in dB, on `grid`, as written by
+    /// `SpectrumMeasurement`. (Mean power in dB and a magnitude response in dB are the same
+    /// quantity — 10·log10 of power is 20·log10 of magnitude — so no rescaling is needed.)
+    ///
+    /// `verificationSampleRate` is used only to evaluate the biquad magnitudes the proposal
+    /// would realise; the measurement itself is rate-independent by construction, and below
+    /// 10 kHz the difference between 44.1 and 48 kHz is far too small to change a verdict.
+    static func propose(meanDB: [Float], grid: [Double], frames: Int, distinctTitles: Int,
+                        verificationSampleRate: Double = 48_000) -> Proposal? {
         guard frames >= minFrames, distinctTitles >= minDistinctTitles,
-              sampleRate > 0, meanDB.count == fftSize / 2 else { return nil }
+              meanDB.count == grid.count, grid.count > 2 else { return nil }
 
-        let grid = logGrid()
-        guard let curve = resample(meanDB: meanDB, sampleRate: sampleRate,
-                                   fftSize: fftSize, grid: grid) else { return nil }
+        let curve = meanDB.map(Double.init)
+        let sampleRate = verificationSampleRate
         let audible = smoothed(curve: curve, grid: grid, erbs: 1.0)
         let timbre  = smoothed(curve: curve, grid: grid, erbs: referenceERBs)
         let anomaly = zip(audible, timbre).map { $0 - $1 }
@@ -192,35 +195,6 @@ enum AdaptiveCorrection {
         let lo = 20.0, hi = 20_000.0
         let n = Int((log2(hi / lo) * gridPointsPerOctave).rounded())
         return (0...n).map { lo * pow(2.0, Double($0) / gridPointsPerOctave) }
-    }
-
-    /// Averages FFT bins into each grid cell. Cells too narrow to contain a bin of their own
-    /// are INTERPOLATED between the neighbouring bin centres — borrowing the nearest bin
-    /// instead produces a staircase whose every step reads as a resonance.
-    static func resample(meanDB: [Float], sampleRate: Double, fftSize: Int,
-                         grid: [Double]) -> [Double]? {
-        let binHz = sampleRate / Double(fftSize)
-        guard binHz > 0 else { return nil }
-        let halfCell = pow(2.0, 1.0 / (2 * gridPointsPerOctave))
-        var out = [Double](repeating: 0, count: grid.count)
-        for (i, f) in grid.enumerated() {
-            let lo = Int((f / halfCell / binHz).rounded(.down))
-            let hi = Int((f * halfCell / binHz).rounded(.up))
-            let clampedLo = max(1, min(lo, meanDB.count - 1))
-            let clampedHi = max(clampedLo, min(hi, meanDB.count - 1))
-            if clampedHi > clampedLo {
-                var sum = 0.0
-                for k in clampedLo...clampedHi { sum += Double(meanDB[k]) }
-                out[i] = sum / Double(clampedHi - clampedLo + 1)
-            } else {
-                // Linear interpolation in dB between the two bins straddling f.
-                let exact = f / binHz
-                let k0 = max(1, min(Int(exact.rounded(.down)), meanDB.count - 2))
-                let t = min(max(exact - Double(k0), 0), 1)
-                out[i] = Double(meanDB[k0]) * (1 - t) + Double(meanDB[k0 + 1]) * t
-            }
-        }
-        return out
     }
 
     /// Averages the curve over `erbs` ERBs around each point, in the dB domain.

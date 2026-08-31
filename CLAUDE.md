@@ -303,9 +303,17 @@ the app has. So: stop naming the music, and correct the recording instead.
 - `SpectrumMeasurement` — long-term average spectrum of the PRE-EQ tap, accumulated per artist
   across sessions into `~/Library/Application Support/Eqlume/spectrum-measurements.json`.
   8192-point FFT (5.9 Hz bins at 48 kHz) because at 2048 there are not enough bins inside one
-  ERB down at 50 Hz for the low end to be measurable. Sampled 4 s every 5 s, ~46 frames per
-  snapshot. A sample-rate change **resets** it: bins are only comparable on one frequency axis.
-  Only accumulates while `audio.isRunning`, i.e. headphones in the jack.
+  ERB down at 50 Hz for the low end to be measurable. Sampled 4 s every 5 s. Only accumulates
+  while `audio.isRunning`, i.e. headphones in the jack.
+  **Stored on a 1/24-octave axis in HERTZ, never on FFT bins.** The first version accumulated
+  per bin and called `entries.removeAll()` whenever the output device changed sample rate, on
+  the correct observation that bin *k* is a different frequency at 44.1 kHz than at 48 kHz.
+  The reasoning was right and the consequence was indefensible: it silently destroyed ten days
+  of measurement the first time a device switched rate, and the test suite had frozen that
+  behaviour in as though it were a feature — the bug was tested, and passed. Bins are an
+  implementation detail; hertz are not. A rate change now costs a recomputed bin→cell mapping
+  and nothing else. The file also went from 10.7 MB to ~150 KB, and `save()` encodes off the
+  main thread — it runs while music plays and the UI has no reason to wait for it.
 - `AdaptiveCorrection` — turns that spectrum into at most 3 peaking bands. **No external
   reference**, and that is the whole point: every documented failure mode of automatic spectral
   matching (arbitrary reference choice, loudness dependence, heavy-handedness, song-specific
@@ -343,6 +351,17 @@ the app has. So: stop naming the music, and correct the recording instead.
   resonance and a hiss shelf, ignores a 2-octave hump, a pure tilt and a steep rolloff, is
   level-invariant, respects every bound). It has never been run on a real measurement, because
   there was no data yet. Read the JSON first, review the proposals, then wire application.
+
+## Startup: ready without being switched on
+
+The user's requirement is that the Mac comes up usable with nothing to do. Two halves:
+- **Login item registered once** on first launch (`Eqlume.didRegisterLoginItem`), so a later
+  deliberate "off" in the settings panel is not overridden on the next launch.
+- **Auto detection is forced ON at every launch**, not restored from the last session. This is
+  not tidiness: `selectPreset` turns auto off and persists it, and the popover shows exactly
+  one preset chip — so a single tap on the only chip in the UI permanently kills detection.
+  That happened, and detection was silently off for four days before anyone noticed. The
+  toggle still works within a session; it just no longer survives a restart.
 
 ## Distribution — Mac App Store
 
