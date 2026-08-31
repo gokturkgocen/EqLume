@@ -405,8 +405,12 @@ final class AutoPresetSelector {
             guard self.lastTrackIdentity == identity else { return }   // track changed → abort
             guard let (samples, rate) = self.audio.snapshotAnalysisAudio(seconds: 4.0) else { return }
             guard let clf = await self.ensureClassifier() else {
-                self.applyIfChanged(.pop)
-                self.lastDetection = "\(prefix) [catalog unavailable] → \(EQPreset.pop.name)"
+                // No classifier and no catalog answer means we do not know, and pop is not a
+                // neutral guess — it lifts 80 Hz. The measured baseline is the honest curve.
+                // This matters most in the App Store flavor, which ships no model at all, so
+                // this branch is its ONLY outcome for an unresolved track.
+                self.applyIfChanged(.natural)
+                self.lastDetection = "\(prefix) [no catalog, no classifier] → \(EQPreset.natural.name)"
                 self.lastSourceKind = .catalog
                 self.onStatusChange?()
                 return

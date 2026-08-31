@@ -1,442 +1,349 @@
 # EqLume
 
-System-wide equalizer for macOS, originally tuned for the **Moondrop Chu II IEM on the
-MacBook Air M4 3.5mm headphone jack** (but usable with any headphones). Auto-selects a
-genre-appropriate EQ preset from what's playing. Author: Göktürk Göcen. Open source —
-MIT for the app's own code; the bundled ML model is CC BY-NC-SA 4.0 (see LICENSE / THIRD-PARTY.md).
+System-wide equalizer for macOS, originally tuned for the **Moondrop Chu II IEM on the MacBook
+Air M4 3.5 mm headphone jack** (usable with any headphones). Picks a genre-appropriate EQ preset
+from whatever is playing. Author: Göktürk Göcen. MIT for the app's own code; the bundled ML model
+is CC BY-NC-SA 4.0 (see LICENSE / THIRD-PARTY.md).
 
 **Spelling of the name — one rule.** Everything a human reads says **`EqLume`** (capital L):
-`CFBundleName` / `CFBundleDisplayName`, README, App Store listing, list submissions, marketing.
-Everything a machine keys on keeps the old single-capital form and must NOT be renamed:
-`CFBundleIdentifier` = `com.gokturkgocen.Eqlume`, `CFBundleExecutable` = `Eqlume`, the
-UserDefaults key prefix `Eqlume.*` (`Eqlume.language`, `Eqlume.enabledOutputDeviceUIDs`,
-`Eqlume.pinnedPresets`),
-and the built bundle path `build/Eqlume.app`. Changing the bundle id would orphan the App
-Store record and every stored preference; changing a defaults key would silently reset the
-user's settings. The GitHub repo is `gokturkgocen/EqLume`.
+`CFBundleName` / `CFBundleDisplayName`, README, App Store listing, marketing. Everything a
+machine keys on keeps the old single-capital form and must NOT be renamed: `CFBundleIdentifier`
+= `com.gokturkgocen.Eqlume`, `CFBundleExecutable` = `Eqlume`, the built bundle path
+`build/Eqlume.app`, and every UserDefaults key — currently `Eqlume.activePresetName`,
+`.autoEnabled`, `.didMigrateFromSesEQ`, `.didRegisterLoginItem`, `.enabledOutputDeviceUIDs`,
+`.hasSeenOnboarding`, `.language`, `.pinnedPresets`. Renaming the bundle id orphans the App Store
+record; renaming a defaults key silently resets that setting. Keep this list complete — it exists
+to be checked against, and an incomplete one cannot do that job.
 
 ## Build / run
 
 ```bash
-./build.sh            # builds build/Eqlume.app (signs with Apple Development if present, else ad-hoc)
-./build.sh install    # also copies to /Applications and is the normal deploy step
+./build.sh            # builds build/Eqlume.app (Apple Development identity if present, else ad-hoc)
+./build.sh install    # also copies to /Applications — the normal deploy step
 ```
-- Plain `swiftc`, no Xcode project. All `Sources/*.swift` compiled together.
-- Signs with a stable **Apple Development** identity if one exists (keeps TCC permissions
-  across rebuilds), otherwise falls back to ad-hoc signing so anyone can build without an
-  Apple Developer account (override via `SIGN_ID=... ./build.sh`). Requires **macOS 26.0+**
-  (build target `arm64-apple-macos26.0`, `LSMinimumSystemVersion` 26.0), Apple Silicon (arm64).
-  NB: the `@available(macOS 14.2, *)` annotations in source are stale minima; the real
-  floor is 26.0 per the build target / Info.plist.
-- Menu-bar only (`LSUIElement`). No dock icon.
+- Plain `swiftc`, no Xcode project; all `Sources/*.swift` compiled together.
+- A stable **Apple Development** identity keeps TCC permissions across rebuilds; without one it
+  signs ad-hoc so anyone can build with no Apple account (`SIGN_ID=... ./build.sh` to override).
+- Requires **macOS 26.0+**, Apple Silicon. The `@available(macOS 14.2, *)` annotations in source
+  are stale minima; the real floor is the build target / `LSMinimumSystemVersion`.
+- Menu-bar only (`LSUIElement`), no dock icon.
 
-## What it does
+## Audio path
 
-- Captures system audio via **Core Audio process tap** (`muteBehavior = .muted`) + a private
-  **aggregate device**, runs it through **AVAudioUnitEQ**, plays back through the real output
-  device. No virtual driver / kernel extension (works with just a free Apple ID).
-- **Which outputs get EQ'd — three tiers** (`AudioEngine.shouldProcessForCurrentDevice`):
-  1. **Built-in 3.5mm jack** (`hdpn` data source) → always on, `OutputProfile.chuII`
-     (the Chu II → Harman in-ear correction). This is the measured combo.
-  2. **Built-in speakers** (`ispk`) → never processed; Apple's own DSP is left alone.
-  3. **Any other output** (HDMI/DisplayPort monitor speakers, USB DAC, Bluetooth …) →
-     **opt-in per device**, keyed by Core Audio device UID in `DeviceEQPolicy`
-     (UserDefaults `Eqlume.enabledOutputDeviceUIDs`, stable across reconnects). Once
-     enabled it runs `OutputProfile.desktopSpeakers`.
-- **Baseline is per-device, and that is the whole point** (`OutputProfile` in
-  `OutputProfile.swift`): music presets store ONLY their genre delta and set
-  `usesDeviceBaseline = true`; `EQPreset.resolved(baseline:)` folds in the profile's baseline
-  before the preset reaches the EQ node. `.chuII` → `chuIIBaseline`;
-  `.desktopSpeakers` → `desktopSpeakerBaseline` (small 2.1 desk set: trim sub-45 Hz the sub
-  can't play, tame the 80 Hz one-note hump and the 200 Hz cabinet/desk boxiness, small 500 Hz
-  body fill, +2.5 dB at 3 kHz for the off-axis vocal recession, +2 dB air shelf — class-typical
-  faults, not a measurement of one model; tune by ear from there). Never apply the Chu II
-  in-ear correction to a speaker — an IEC-711 coupler correction does not transfer to a
-  transducer radiating into a room. `flat` and `voice` are standalone
-  (`usesDeviceBaseline = false`) and behave identically everywhere.
-  Caveat to fix if it ever matters: the opt-in list is one flat set, so ANY opted-in
-  non-jack device gets the speaker baseline — a USB DAC + headphones would get the wrong
-  curve. Add a per-device profile picker at that point, not before.
-  `AudioEngine.resolvedPreset` is what the EQ and the drawn curve must both use; the curve
-  cache key includes the profile (`StatusBarController.curveKey`) because one preset name
-  resolves to different curves on different devices.
-- **Muted-tap teardown INVARIANT (do not break):** the tap is a *global* `muteBehavior = .muted`
-  tap — while it exists it silences the whole system except EqLume. So teardown must be bulletproof:
-  `teardownAudioResources()` is idempotent and NEVER guarded by `isRunning`; `startCore()` is
-  exception-safe (a `defer` tears everything down on any partial-start throw); `stopCore()` always
-  tears down (no `guard isRunning` early return). Past bug: a start that failed mid-way during a
-  device hot-plug left an **orphaned muted tap** (`isRunning=false` but tap alive → every later
-  `stopCore` no-op'd) → the whole Mac stayed muted until EqLume quit. Also: on Apple Silicon the
-  built-in speakers and 3.5mm jack share ONE device ID, so a headphone unplug flips
-  `kAudioDevicePropertyDataSource` (ispk↔hdpn) WITHOUT a default-device change —
-  `AudioEngine.updateDataSourceListener` watches that so `reconcile()` runs on plug/unplug too.
+- System audio is captured with a **Core Audio process tap** (`muteBehavior = .muted`) plus a
+  private **aggregate device**, run through **AVAudioUnitEQ**, and played back to the real output.
+  No virtual driver, no kernel extension — a free Apple ID is enough to build it.
+- **MUTED-TAP TEARDOWN INVARIANT — do not break.** The tap is *global*: while it exists the whole
+  Mac is silent except EqLume. So `teardownAudioResources()` is idempotent and is NEVER guarded by
+  `isRunning`; `startCore()` is exception-safe (a `defer` tears everything down on a partial-start
+  throw); `stopCore()` always tears down with no `guard isRunning` early return. A start that
+  failed mid-way during a device hot-plug once left an orphaned muted tap — `isRunning=false` but
+  the tap alive, so every later `stopCore` no-op'd — and the Mac stayed silent until the app quit.
+- On Apple Silicon the built-in speakers and the 3.5 mm jack **share one device ID**, so a
+  headphone unplug flips `kAudioDevicePropertyDataSource` (`ispk`↔`hdpn`) with NO default-device
+  change. `AudioEngine.updateDataSourceListener` watches that so `reconcile()` runs on plug/unplug.
 
-## EQ presets (`EQPreset.swift`)
+### Which outputs get EQ'd (`AudioEngine.shouldProcessForCurrentDevice`)
 
-- **Chu II baseline** (every music preset): measurement-derived correction → Harman in-ear
-  2019v2. 7 filters, the CONSENSUS of 3 independent AutoEQ fits (HypetheSonics/Kazi/Super Review,
-  all 711/GRAS-RA0045 + Harman IE 2019v2). This is the important part. Replaced an earlier hand-set
-  baseline that mixed a 5128(4620) measurement with the GRAS-Harman target (incompatible) — it had
-  no ~6 kHz presence lift and *boosted* the 10 kHz shelf when the Chu 2 actually needs it CUT
-  (excess upper treble / ~14 kHz overshoot per ASR). A PEQ is only valid for the coupler+target it
-  was fit on — keep measurement and target on the same rig. `maxBands=12` (7 baseline + up to 3 delta).
-- Per-genre presets = baseline + small genre delta (hip-hop/trap/edm/.../voice). Deltas are
-  engineering judgment, not measured — kept small (≤±4 dB). Voice preset is separate (not Harman).
-- `globalGain = preampOffsetDB` (negative, prevents clipping). No makeup gain (user prefers
-  clean dynamics over loudness; volume drop is expected, compensate at system volume).
+1. **Built-in 3.5 mm jack** (`hdpn`) → always on, `OutputProfile.chuII`. This is the measured combo.
+2. **Built-in speakers** (`ispk`) → never processed; Apple's own DSP is left alone.
+3. **Anything else** (monitor speakers, USB DAC, Bluetooth) → **opt-in per device**, keyed by Core
+   Audio device UID (`DeviceEQPolicy`, `Eqlume.enabledOutputDeviceUIDs`, stable across reconnects),
+   then runs `OutputProfile.desktopSpeakers`.
 
-## Auto preset selection (`AutoPresetSelector.swift`)
+Caveat to fix only when it bites: the opt-in list is one flat set, so ANY opted-in non-jack device
+gets the speaker baseline — headphones on a USB DAC would get the wrong curve. Add a per-device
+profile picker at that point, not before.
 
-Per track, resolves a preset in this order:
-0. **Pinned track** (`PinnedPresets`, `Eqlume.pinnedPresets`) — an (artist, title) → preset
-   name map the user sets from the settings panel. It outranks EVERYTHING below, including a
-   genre hint the player supplied, and skips the whole chain. Detection is a guess by
-   construction, so for the few records played on repeat this is where the answer gets stated
-   once instead of being re-decided every play. Key is the lowercased `artist||title` the
-   player reports, so a different upload of the same song is a different pin. The stored value
-   is `EQPreset.name` (the stable key, not `displayName`), and a name that no longer exists
-   resolves to nil rather than crashing. Tag marker `★` → source "sabit / pinned".
-1. **Pre-fetch cache** — Spotify/YT Music queue lookahead resolved the next track already → instant.
-2. **Classical work titles** (`looksLikeClassicalWork`) — offline, before any lookup, because on a
+## Presets (`EQPreset.swift`, `OutputProfile.swift`)
+
+- **The baseline is per-device, and that is the whole design.** Music presets store ONLY their
+  genre delta with `usesDeviceBaseline = true`; `EQPreset.resolved(baseline:)` folds the profile's
+  baseline in before the preset reaches the EQ node. `.chuII` → `chuIIBaseline`,
+  `.desktopSpeakers` → `desktopSpeakerBaseline`. `flat` and `voice` are standalone and behave
+  identically everywhere. `AudioEngine.resolvedPreset` is what the EQ and the drawn curve must both
+  use; the curve cache key includes the profile (`StatusBarController.curveKey`) because one preset
+  name resolves to different curves on different devices.
+- **Chu II baseline**: 7 filters, the consensus of 3 independent AutoEQ fits (all 711/GRAS-RA0045
+  + Harman IE 2019v2). **A PEQ is only valid for the coupler and target it was fit on.** An earlier
+  hand-set baseline mixed a 5128 measurement with a GRAS-Harman target, and was wrong in both
+  directions — no ~6 kHz presence lift, and it *boosted* a 10 kHz shelf the Chu II needs cut.
+- **Never apply the Chu II correction to a speaker.** An IEC-711 coupler correction does not
+  transfer to a transducer radiating into a room. `desktopSpeakerBaseline` is a separate,
+  class-typical 2.1-desk correction — **not** a measurement of any specific set, so it is meant to
+  be trimmed by ear (bass thin → 80 Hz toward −1; treble harsh → 3 kHz toward +1.5).
+- Genre deltas are **engineering judgment, not measurement**, and stay small (≤ ±4 dB). Say so
+  wherever one is documented.
+- `globalGain = preampOffsetDB` (negative, prevents clipping). **No makeup gain** — the volume drop
+  from the Harman bass cut is intentional; compensate at the system volume. Do not "fix" it.
+- **Corrections cut; they do not pile on gain.** A suggestion with +12 dB peaks needing −16 dB of
+  preamp was actively unpleasant. Boost is the last resort, never the first move.
+- `maxBands = 12` (7 baseline + up to 3 delta). Measured correction will need more; raise it there.
+
+## Detection: which preset, per track (`AutoPresetSelector.swift`)
+
+Resolved in this order. **Every step may decline**; nothing in this chain is allowed to dress a
+non-answer as an answer.
+
+0. **Pinned track** (`PinnedPresets`, `Eqlume.pinnedPresets`) — an (artist, title) → preset-name
+   map the user sets from the settings panel. Outranks everything below, including a genre hint
+   from the player, and skips the chain entirely. Detection is a guess by construction; for the few
+   records played on repeat this is where the answer is stated once. Key is the lowercased
+   `artist||title` the player reports, so a different upload of the same song is a different pin.
+   The stored value is `EQPreset.name` (the stable key, never `displayName`); an unknown name
+   resolves to nil rather than crashing. Tag `★` → source "sabit / pinned".
+1. **Pre-fetch cache** — the Spotify/YT Music queue lookahead already resolved this track.
+2. **Local artist lists** (`!APP_STORE`) — arabesk and Anatolian/Caucasian folk singers, matched on
+   a normalized name. For these the catalog is not thin but *confidently wrong*: Apple files the
+   Azerbaijani xalq mahnısı "Evlərinin önü yonca" as **Pop** with the artist matching exactly, so
+   the check that rejects bad hits waves it through. **Normalization must map `ı`→`i` and `ə`→`e`
+   by hand** (`turkicNameKey`); Foundation's diacritic folding handles ş/ç/ğ/ö/ü but not those two,
+   and until that was fixed two of the eleven arabesk entries could never match.
+3. **Classical work titles** (`looksLikeClassicalWork`) — offline, before any lookup, because on a
    classical upload the artist field holds a performer no catalog has heard of while the title
    states the piece exactly. Qualifies on an opus/thematic-catalogue number (`Op. 9`, `BWV 846`,
-   `K. 331` — single-letter catalogues require their period, a bare "d 2" is anything else), or on
-   a classical form word TOGETHER WITH a movement number or a stated tonality. The tonality alone
-   is not enough: "In A Major Way" is a soul album. Tag marker `♯` → source "eser adı / work title".
-3. **Catalog** (`resolveGenre`) — best source first. It returns THREE outcomes, and the
-   distinction is load-bearing: `.resolved`, `.noData` (every source answered and none knew
-   the track), and `.unavailable` (a source we trust more could not be reached). On
-   `.unavailable` the chain does NOT fall through to a weaker source or retry with a mangled
-   artist name — it defers to audio analysis, which needs no network. Collapsing those two
-   into one optional is what turned a single unanswered request into a wrong curve: Andrea
-   Bocelli is `classical` 6 / `classical crossover` 3 / `pop` 2 in MusicBrainz, and one
-   timeout handed him to iTunes, which says Pop. `MusicBrainzService.get` also retries once
-   (and backs off on a 503), because resolving one track can now cost four requests through a
-   ≤1 req/s throttle — the album lookup doubled the exposure to a single slow answer.
-   `mapGenreToPreset` returns an OPTIONAL: an unrecognised genre string used to fall back to
-   `.pop`, which dresses a non-answer as a confident one, and pop is not neutral — it lifts
-   80 Hz. NB when editing it: pop was ONLY reachable through that fallback, so removing it
-   silently stopped plain "Pop" from mapping to anything until an explicit rule was added.
-   Known divergence, harmless so far: `mapGenreToPreset` checks EDM before pop (so "Dance
-   Pop" → EDM) while `genreKeywordRules` deliberately checks pop first (→ pop).
+   `K. 331` — single-letter catalogues require their period), or a classical form word TOGETHER
+   with a movement number or a stated tonality. Tonality alone is not enough: "In A Major Way" is a
+   soul album. Tag `♯` → source "eser adı / work title".
+4. **Catalog** (`resolveGenre`), best source first — see below.
+5. **Audio classifier** (`GenreClassifier`) — deferred ~4.5 s so the analysis ring holds the
+   current track. Catalog-independent.
+6. **Nothing** → `.natural`, the measured baseline. There is deliberately no "default to pop":
+   pop is not neutral, it lifts 80 Hz.
 
-   - **MusicBrainz album votes** (`albumGenres`, tried first): the release group's own genre votes.
-     Artist votes describe a career, which is wrong whenever one record departs from it — Tame
-     Impala's artist votes are psychedelic rock 13 / alternative rock 5 / indie rock 3, so every
-     track resolved to rock, but "Dracula" is on *Deadbeat*, whose album votes are dance-pop 3 plus
-     house / tech house / techno / electronic → EDM. Two requests (recording search →
-     release-group detail), cached per artist+title. Only a **plain studio album** counts:
-     primary-type `Album` with NO secondary type, since "Dracula" also sits on "Now That's What I
-     Call Music! 123", "Bravo Hits 132", remix singles and DJ-mixes, whose votes describe the
-     package. `tags` are NOT used as a fallback here the way they are for artists — release-group
-     tags are full of non-genres ("plattentests.de", "offizielle charts", "5+ wochen").
-     Album coverage is thinner than artist coverage (Currents has no album votes at all), so this
-     is a preference, not a replacement.
-   - **MusicBrainz artist votes** (`artistGenres`): community genre votes WITH counts,
-     count-weighted into a family via `mapWeightedGenresToPreset` + `genreKeywordRules`. Free,
-     no API key (descriptive User-Agent + ≤1 req/s throttle), cached per artist. Accurate at the
-     artist level where iTunes mislabels (Buckethead→"Electronic", Dire Straits→"Pop" are both
-     fixed → metal / rock). Detection tag carries a `♪` marker (shown as source "MusicBrainz").
-     The displayed genre name is the strongest vote INSIDE the winning family, not the strongest
-     vote overall — otherwise the label contradicts the preset beside it (Deadbeat leads with
-     `dance-pop` while its house/techno votes add up to EDM).
-   - **iTunes** Search API genre (fallback), WITH `artistNamesRoughlyMatch` verification to reject
-     confident wrong matches. Detection tag has no marker → source "katalog".
-   - **NOT Spotify**: Spotify removed `genres`/followers/popularity from its Web API in 2024
-     (`GET /v1/artists/{id}` returns only name/images/uri — verified live), so it's useless for
-     genre. SpotifyAPI is kept only for now-playing + queue pre-fetch.
-   On miss, both sources are retried once by splitting an `"Artist - Title"` embedded in the title
-   (`splitArtistTitle`) — YouTube channels often put the uploader in the artist slot ("NEA ZIXNH")
-   with the real artist in the title ("Gary Moore - Parisienne Walkways"); verified against the
-   parsed artist. The popover shows the resolved SOURCE next to the genre dot
-   (`EQViewModel.deriveSource`: MusicBrainz / katalog / analiz / ön-yükleme).
-   **Three compounding faults once made `KIVIRCIK ALİ-GÜL TÜKENDİ` come out as Vokal/Diyalog**;
-   all three are fixed and each is a trap worth remembering. (a) `splitArtistTitle` matched only
-   *spaced* separators (`" - "`), so a bare dash left the channel name in the artist slot and the
-   real artist was never looked up. It now also splits on a bare `-`/`–`/`—`, guarded so hyphenated
-   names survive: both sides ≥3 chars AND at least one side multi-word (verified: Jay-Z, T-Pain,
-   Blink-182, AC-DC do not split; "Sezen Aksu-Firuze" does). (b) iTunes labels Turkish folk simply
-   **`Halk`**, so keyword rules must match bare `halk` / `türkü` / `sanat müziği`, not only
-   `"türk halk"`. (c) `GenreLookupService` asked for `limit=1`, and a cover/feat. upload can
-   outrank the original ("Kenan Ayık – Gül Tükendi (feat. Kıvırcık Ali)" → Hip-Hop/Rap); the
-   artist check then rejected it and the whole lookup failed. It now fetches 5 and picks the first
-   result whose artist actually matches (`artistNamesRoughlyMatch`), falling back to the top hit.
-   **A second three-fault pile-up made a Chopin nocturne come out as METAL** — same shape, all
-   three fixed, and the middle one is the reusable lesson. (a) The bare-dash split cut a musical
-   key: "Chopin: Nocturne in E-flat Major, Op. 9 No. 2" split at `E-flat`, leaving the fragment
-   "Chopin: Nocturne in E" to be looked up as an artist. It now refuses to split when the text just
-   left of the dash is a single letter. (b) `artistNamesRoughlyMatch` accepted an UNANCHORED
-   substring, so "Nocturne" — a Dallas metal/industrial band, third hit at score 76 — matched that
-   fragment and beat the score-100 "Fryderyk Chopin" at the top of the same result set. Partial
-   matches are now anchored AND directional: when the name we want is the shorter one it may be a
-   prefix or a suffix of the candidate ("Chopin" in "Fryderyk Chopin"), but when the CANDIDATE is
-   shorter it may only be a prefix, which is what admits "Sezen Aksu" for "Sezen Aksu feat. X"
-   while rejecting a band name buried mid-string ("Helmer" in "Johannes Helmer Pedersen").
-   (c) `searchArtistMBID` ended in `?? obj.artists.first`, so MusicBrainz could never answer "I
-   don't know this artist" — any junk query was handed a stranger's genres at full confidence.
-   That fallback is gone; unknown → `.noMatch`. Its one replacement is narrow: the TOP hit is
-   accepted if its surname token matches, because MB indexes aliases and transliterations our
-   normalizer cannot ("Frédéric Chopin" → "Fryderyk Chopin", where only "Chopin" survives).
-4. **Audio-content classifier** (catalog miss) — deferred ~4.5s so the analysis ring fills with
-   the current track, then Discogs-EffNet CoreML classifies from the audio itself. Catalog-independent.
-5. Default → pop.
+### The catalog step
 
-Now-playing sources: Spotify Web API (OAuth, has queue pre-fetch), YouTube Music (browser DOM
-via AppleScript `execute javascript`, has queue pre-fetch), Apple Music / browsers (AppleScript).
-Genre string → preset via `mapGenreToPreset`; Discogs styles → preset via `PresetFamily`.
+`resolveGenre` returns **three** outcomes and the distinction is load-bearing: `.resolved`,
+`.noData` (every source answered, none knew the track), `.unavailable` (a source we trust more
+could not be reached). On `.unavailable` the chain does NOT fall through to a weaker source and
+does NOT retry with a name parsed out of the title — it defers to audio analysis, which needs no
+network. Collapsing those two into one optional is how a single timeout turned Andrea Bocelli
+(`classical` 6 / `classical crossover` 3 / `pop` 2 in MusicBrainz) into iTunes' answer of Pop.
 
-**Transport controls** (`PlaybackController.swift`): the popover's ⏮ ⏯ ⏭ row routes to whatever
-player is currently producing audio (resolved via `AudioSourceMonitor.currentSourceBundleID()` at
-press time — no per-frame cost; silent no-op on an unsupported source). Per-source channel:
-Spotify & Apple Music via AppleScript transport verbs (`previous track` / `playpause` / `next track`);
-YouTube Music via JS click in `ytmusic-player-bar` (`YouTubeMusicService.sendControl`). Spotify uses
-AppleScript **not** the Web API, so no extra OAuth scope / re-auth / Premium dependency. YT Music
-control selectors were verified against the live DOM: current YTM uses `yt-icon-button` with
-`#play-pause-button` / `.next-button` / `.previous-button` (old `tp-yt-paper-icon-button` kept as
-fallback). `buildAppleScript(for:runningJS:)` is the shared injector for both read and control JS.
+Sources, in order:
 
-## Audio-content classifier (the big piece)
+- **MusicBrainz album votes** (`albumGenres`) — the release group's own votes. Artist votes
+  describe a career, which is wrong whenever one record departs from it: Tame Impala is
+  psychedelic rock by career, but "Dracula" is on *Deadbeat*, whose votes are dance-pop plus
+  house/techno → EDM. Only a **plain studio album** counts (primary type `Album`, no secondary
+  type) — the same recording also sits on compilations, remix singles and DJ-mixes whose votes
+  describe the package. No `tags` fallback here: release-group tags are full of non-genres
+  ("plattentests.de", "offizielle charts"). Coverage is thinner than artist coverage, so this is a
+  preference, not a replacement.
+- **MusicBrainz artist votes** (`artistGenres`) — count-weighted into a family via
+  `mapWeightedGenresToPreset` + `genreKeywordRules`. Free, no key, ≤1 req/s throttle, cached per
+  artist. Right where iTunes is wrong at the artist level (Buckethead → "Electronic", Dire Straits
+  → "Pop"). Tag `♪`. The displayed genre name is the strongest vote **inside the winning family**,
+  not overall, or the label contradicts the preset beside it.
+- **iTunes** (`GenreLookupService`) — one genre per track, verified with `artistNamesRoughlyMatch`.
+  No marker → source "katalog". Fetches 5 results and picks the first whose artist actually
+  matches: with `limit=1` a cover or feat. upload can outrank the original, fail verification, and
+  sink the whole lookup.
+- **NOT Spotify** — it removed `genres` from the Web API in 2024 (verified live). `SpotifyAPI` is
+  kept only for now-playing and queue pre-fetch.
+
+Rules this step earned the hard way, each still enforced:
+
+- **`mapGenreToPreset` returns an optional.** Its fallback used to be `.pop`, which turns "I don't
+  recognise this" into a confident answer. NB: pop was *only* reachable through that fallback, so
+  removing it silently stopped plain "Pop" mapping to anything until an explicit rule was added at
+  the end. Known divergence, harmless so far: this function checks EDM before pop ("Dance Pop" →
+  EDM) while `genreKeywordRules` deliberately checks pop first.
+- **A search hit must actually be the artist.** `artistNamesRoughlyMatch` accepts only ANCHORED,
+  DIRECTIONAL partial matches: when the name we want is shorter it may be a prefix or suffix of the
+  candidate ("Chopin" in "Fryderyk Chopin"); when the *candidate* is shorter it must be a
+  whole-token prefix, and a single-token candidate additionally needs a collaboration word after it
+  ("Sezen Aksu" for "Sezen Aksu feat. X", but not "Timeless" for "Timeless Serenade"). An
+  unanchored substring let a Dallas metal band called "Nocturne" answer for a Chopin nocturne.
+- **MusicBrainz must be able to say "I don't know."** `searchArtistMBID` has no
+  `?? artists.first` fallback; unknown → `.noMatch`. Its one narrow replacement: the TOP hit is
+  accepted when the surname token AND the given-name initial both match, which recovers aliases the
+  normalizer cannot ("Frédéric Chopin" is indexed as "Fryderyk Chopin") without letting every
+  same-surname stranger through ("Gülyanaq Məmmədova" for "Nərminə Məmmədova").
+- **Only HTTP-200 outcomes may be cached.** A timeout cached as a permanent miss once stuck
+  Scorpions on the audio classifier for a whole session. `get()` retries once and backs off on 503,
+  because resolving one track can cost four requests through a 1 req/s throttle.
+- **`splitArtistTitle` is a last resort, and it cuts in the wrong places.** It exists because
+  YouTube channels put the uploader in the artist slot with the real artist in the title. It splits
+  on spaced separators first, then a bare dash guarded so hyphenated names survive (Jay-Z, T-Pain,
+  Blink-182 do not split) — and it refuses to split when the text left of the dash is a single
+  letter, because "Nocturne in E-flat Major" is not "Artist - Title".
+- iTunes labels all Turkish folk simply **`Halk`**, and MusicBrainz's only vote on Neşet Ertaş is
+  **`uzun hava`**. Short forms have to match, or the whole tradition falls through to a preset with
+  no delta.
+- Apple's **`World`/`Worldwide`** is a storefront bucket, not a genre; the local build rejects it.
+
+Now-playing sources: Spotify Web API (OAuth, queue pre-fetch), YouTube Music (browser DOM via
+AppleScript `execute javascript`, queue pre-fetch), Apple Music and browsers (AppleScript).
+`cleanMusicTitle` strips tempo/edit tags (`slowed`, `nightcore`, `bass boosted`, remaster/live/…)
+before lookup so variant uploads match the original recording.
+
+**Transport controls** (`PlaybackController`): the popover's ⏮ ⏯ ⏭ route to whatever is actually
+producing audio, resolved at press time via `AudioSourceMonitor.currentSourceBundleID()`. Spotify
+and Apple Music use AppleScript transport verbs — **not** the Web API, so no extra OAuth scope or
+Premium dependency. YT Music uses a JS click in `ytmusic-player-bar`.
+
+## Audio classifier (`GenreClassifier.swift`)
 
 - **Model**: Discogs-EffNet (MTG-UPF), ONNX → CoreML. Input `[1,128,96]` mel, output 400 styles.
-- **Mel** (`MelSpectrogram.swift`, vDSP): symmetric raw Hann → |rfft|² power → 96×257 unit_tri
-  slaneyMel filterbank → log10(10000·x+1). **Verified bit-exact vs Essentia TensorflowInputMusiCNN**
-  (max diff 0.0 in Python; Swift port self-tests to ~5e-6 on every load).
-- **Pipeline & regeneration**: `ml-pipeline/README.md`. Bundled resources: `Resources/DiscogsEffNet.mlmodelc`,
-  `mel_filterbank_96x257.f32`, `discogs_styles.txt`, `selftest_*.f32`.
-- Audio path: `AudioEngine` IOProc downmixes tapped pre-EQ audio to mono into `AnalysisRingBuffer`
-  (6s); `GenreClassifier` snapshots 4s, resamples to 16k (AVAudioConverter), runs inference off
-  the main actor, aggregates 400 styles → `PresetFamily` by summed probability.
-- **Discogs parents lie about one style** (`PresetFamily.fromDiscogsStyle`): `Modern Classical`
-  is filed under the **Electronic** parent, so parent-genre mapping sent solo piano to EDM and
-  lifted its bass. The `electronic` branch checks for a `classical` style first.
-- **Voice is refused outright on music-only players** (`classify(allowVoice:)` +
-  `AutoPresetSelector.musicOnlyBundles`). The guard below only rejects `.voice` when no single
-  voice style is on top — which still let a string-heavy instrumental classical track come out
-  as "Vokal / Diyalog", because the model put a `Non-Music---*` style on top and cleared the
-  confidence bar. Sparse acoustic material genuinely reads as room tone to this model. So on
-  Spotify, Apple Music and YT Music the classifier may not answer `.voice` at all and falls to
-  the best music family; a browser tab keeps it, since a YouTube talk really can be speech.
-  Nothing is lost: real speech on those services carries a catalog genre that resolves long
-  before analysis runs. Note this can end in `Genre uncertain` + the neutral preset rather than
-  a named genre — which is the honest outcome when the model is confused.
-- **Voice grab-bag guard** (`GenreClassifier.classify`): 16 styles (13 `Non-Music---*` + 3
-  `Children's---*`) all map to `.voice`. Summed-probability aggregation lets a sparse/slowed/
-  downtempo *music* track leak small probability into many of them and win `.voice` even when no
-  single spoken-word style is on top (e.g. slowed tracks like "Indica (Slowed)" → "Podcast").
-  Fix: `.voice` may only win if the **single top style** is itself a voice style; otherwise fall
-  back to the best non-voice (music) family. Genuine voice still reachable via comm-app bundle
-  mapping and catalog genre hints. Don't widen `.voice` membership without re-checking this.
-- **Local classifier confidence guard** (`!APP_STORE`): Discogs families are uneven in size, so
-  the local build scores only each family's three strongest styles (weighted 1/0.5/0.25) instead
-  of letting a large family accumulate hundreds of weak activations. `World` may not win merely
-  by aggregation when its style is not individually on top, and low-confidence/low-margin results
-  keep the neutral preset and display `Genre uncertain` / `Tür belirlenemedi`. Local catalog tags
-  `arabesk`, `türk halk`, and `turkish folk` use the acoustic profile instead of the World bucket.
-  These behavior changes are compiled out of the App Store flavor.
-- **Apple `Worldwide` is not a genre** (`!APP_STORE`): iTunes files many Turkish releases under
-  the storefront bucket `World`/`Worldwide` (verified with Azer Bülbül — “Alıştım”). The local
-  catalog path rejects those generic values. A deliberately small, normalized list of canonical
-  arabesk/fantezi artists resolves to the local-only `Arabesk / Fantezi` profile instead; unknown
-  artists fall through to audio analysis rather than being mislabeled as World.
-- **Title cleaning** (`cleanMusicTitle`, NowPlayingProviders.swift) strips tempo/edit variant tags
-  (`slowed`, `sped up`, `nightcore`, `reverb`, `8d`, `bass boosted`, remaster/remix/live/…) inside
-  ( )/[ ] before catalog lookup, so variant titles match the original recording's genre.
+- **Mel** (`MelSpectrogram.swift`, vDSP) is **verified bit-exact against Essentia's
+  TensorflowInputMusiCNN** (max diff 0.0 in Python; the Swift port self-tests to ~5e-6 on load).
+  Regeneration: `ml-pipeline/README.md`.
+- **Its taxonomy has a hole that cannot be worked around.** Those 400 styles contain **no** Turkish,
+  Anatolian, Azerbaijani, Caucasian or Middle-Eastern label at all (checked against
+  `discogs_styles.txt`). The model cannot name this material even in principle; its closest answers
+  are `Folk` → `.acoustic` or `.world`. This is why measurement-driven correction exists.
+- **`Modern Classical` is filed under the Electronic parent**, so parent-genre mapping sent solo
+  piano to EDM and lifted its bass. The `electronic` branch checks for a `classical` style first.
+- **Voice needs two guards, because sparse acoustic music reads as room tone to this model.**
+  (a) `.voice` may only win if the single top style is itself a voice style — summed probability
+  across 16 `Non-Music---*`/`Children's---*` styles otherwise lets a slowed track become a podcast.
+  (b) On music-only players (`musicOnlyBundles`: Spotify, Apple Music, YT Music) `.voice` is
+  refused outright via `classify(allowVoice:)`, because there it is always a misfire — a
+  string-heavy instrumental classical track came out as "Vokal / Diyalog" with a `Non-Music` style
+  genuinely on top. A browser tab keeps voice: a YouTube talk really can be speech. Nothing is lost,
+  since real speech on those services carries a catalog genre that resolves long before analysis.
+  Do not widen `.voice` membership without re-checking both.
+- **Local confidence guard** (`!APP_STORE`): families are uneven in size, so the local build scores
+  each family's three strongest styles (1 / 0.5 / 0.25) instead of letting a large family win on
+  accumulated noise. Below the confidence/margin bar it keeps the neutral preset and shows
+  `Genre uncertain` / `Tür belirlenemedi` — the honest outcome when the model is confused.
 
-## Permissions the user must grant (one-time)
+## Measurement-driven correction (`!APP_STORE`, not yet wired to audio)
 
-- **Audio Recording** (system audio capture) — first EQ enable.
-- **Automation** → Spotify / Music / Chrome / Safari (for now-playing). Entitlement
-  `com.apple.security.automation.apple-events` is set; menu has "Otomasyon izinlerini test et".
-- **Chrome**: View → Developer → "Allow JavaScript from Apple Events" (for YT Music DOM read).
-- **Spotify pre-fetch**: menu "Spotify ile Bağlan" → paste Client ID from developer.spotify.com
-  dashboard (redirect URI `http://127.0.0.1:38123/cb`). Premium account. Tokens in Keychain.
+For music nothing can name — a violinist with no catalog presence anywhere — stop naming it and
+correct the recording instead.
 
-## Localization (`Localization.swift`)
+- **`SpectrumMeasurement`** — long-term average spectrum of the PRE-EQ tap, per artist, across
+  sessions, in `~/Library/Application Support/Eqlume/spectrum-measurements.json`. 8192-point FFT
+  (5.9 Hz bins at 48 kHz: at 2048 there are too few bins inside one ERB down at 50 Hz). Samples 4 s
+  every 5 s, only while `audio.isRunning` — i.e. headphones in the jack.
+  **Stored on a 1/24-octave axis in HERTZ, never on FFT bins.** The first version accumulated per
+  bin and wiped everything when the output changed sample rate, on the correct observation that bin
+  *k* is a different frequency at 44.1 than at 48 kHz. The observation was right and the
+  consequence was indefensible: ten days of measurement destroyed the first time a device switched
+  rate — and the test suite had frozen that behaviour in as though it were a feature. Bins are an
+  implementation detail; hertz are not.
+- **`AdaptiveCorrection`** — that spectrum into at most 3 peaking bands, with **no external
+  reference**. Every documented failure of automatic spectral matching (arbitrary reference,
+  loudness dependence, heavy-handedness, song-specific nonsense) follows from having one. The
+  reference here is the recording's own spectrum smoothed over 3× the ear's ERB (Glasberg & Moore,
+  `24.7·(4.37·f_kHz + 1)`), and the anomaly is `1×ERB-smoothed − 3×ERB-smoothed`. Subtracting a
+  smoothed copy of a curve from itself cancels any common offset, so playback level provably cannot
+  change the result — there is a test for exactly that.
 
-- **Runtime language switch, English default, Turkish selectable** (settings panel). `Loc.shared`
-  is a `@MainActor ObservableObject` with `@Published lang` persisted in UserDefaults (`Eqlume.language`);
-  views that observe it re-render on switch. `L` is a non-actor mirror (reads UserDefaults) for use
-  off the main actor / in value types. Strings are inline: `loc.t("English", "Türkçe")` / `L.t(...)` —
-  no `.strings` bundling, no key table, no missing-key bugs.
-- **Preset names stay the stable key.** `EQPreset.name` is NEVER localized (it's load-bearing:
-  Theme.family/accent match on it, UserDefaults persists it, chip active-state compares it). A separate
-  `EQPreset.displayName` provides the localized label for display only. Do NOT rename `.name`.
-- **Detection is structured, not parsed.** `AutoPresetSelector` exposes `lastArtist/lastTitle/
-  lastSourceApp/lastSourceKind (DetectionSourceKind)/lastStatus (DetectionStatus)`; the view localizes
-  from these. The old approach parsed Turkish substrings out of `lastDetection` (deriveSource/
-  parseNowPlaying) — removed, because it broke the moment the strings were translated.
+  The separation it relies on: a spectrum's broad **tilt is the music** (bozlak has no bass because
+  no instrument plays bass — "fixing" that would add the very boost this app refuses), while its
+  narrow deviations are the **recording** (resonance, hiss shelf, mic colouration). Four guards,
+  each found by testing rather than reasoning:
+  1. **One scale is not enough** — with the reference at exactly 1 ERB, a resonance about 1 ERB
+     wide erases its own detection (a 7 dB synthetic peak measured 1.15 dB). Hence 1 vs 3.
+  2. **Nearest-bin log resampling builds a staircase** at the low end, and a band-pass operator
+     reports each step's curvature as resonance. Cells with no bin of their own are interpolated.
+  3. **Zeroing the anomaly outside the band manufactures an edge**, and the first surviving point
+     reads as a peak against it. The band restricts candidate SELECTION only.
+  4. **Curvature in the tilt is not a resonance** — the knee where a bass rolloff begins makes a
+     real broad lobe. Rejected by width: wider than 60 % of the reference window is timbre.
 
-## UI (SwiftUI popover)
-
-Menu-bar icon opens an `NSPopover` hosting `PopoverView` (SwiftUI via `NSHostingController`).
-`StatusBarController` (NSObject) owns the model and pushes state into `EQViewModel` (ObservableObject).
-- **Genre-dynamic accent**: the whole popover's accent color follows the active preset's family
-  (`PresetFamily.accent` in `Theme.swift`) — rock=red, edm/techno=blue, country=brown, metal=chrome,
-  etc. Animates on genre change.
-- **EQ curve**: `FrequencyResponse.swift` computes the preset's combined RBJ-biquad magnitude response;
-  drawn as a glowing accent curve with gradient fill in a `Canvas`.
-- **Live spectrum analyzer**: `SpectrumAnalyzer.swift` (2048-pt vDSP FFT, 40 log bands, attack/decay)
-  fed by a 30fps timer in the controller from `AudioEngine.snapshotAnalysisAudio`. Only animates while
-  the popover is open AND EQ is running (headphone jack); decays to flat otherwise.
-- Now-playing card, auto-preset toggle, preset chips, and an expandable settings panel
-  (Spotify connect, automation/YT tests, login-at-start, quit) — NOT a SwiftUI `Menu` (renders
-  unreliably in popovers); a `gearshape` toggle reveals an inline button panel.
-- **"Why this genre?"** (`!APP_STORE`, settings panel → `showDetectionDetail`) shows
-  `AutoPresetSelector.lastDetection`, which records which source answered and, for the audio
-  classifier, its single most probable Discogs style with the confidence. That string was
-  computed and written on every resolve but **read nowhere**, so a wrong genre could only be
-  diagnosed by re-deriving the entire chain by hand against the live APIs. Legend is in the
-  alert itself: `[name ♪]` MusicBrainz, `[name ♯]` classical work title, `[name ★]` pinned,
-  bare `[name]` iTunes, `[style · NN%]` the classifier.
-- **Pinning UI** is an `NSAlert` + `NSPopUpButton`, not a grid in the popover — the manual chip
-  grid was removed for being cluttered, and pinning is a rare deliberate act that should not
-  occupy screen space the rest of the time.
-- **Only ONE preset chip is shown — `EQPreset.natural` (Chu II — Doğal/Harman).** The other 20
-  presets still exist and are used by the auto engine, but the manual chip grid was intentionally
-  removed (user found it cluttered/ugly): the active preset — including whatever auto picks per
-  track — is already shown under the track title, so a full chip grid was redundant. History: a
-  horizontal `ScrollView` of all chips didn't scroll inside `NSPopover` (swipe gesture not
-  delivered) → tried a wrapping `FlowLayout` → user asked for just the single natural chip.
-  Chip "active" highlight = `preset.name == vm.presetName && (!vm.autoOn || vm.autoHasSource)`
-  (`vm.autoHasSource` set in `syncVM`): auto + no source → not highlighted; auto + source →
-  follows auto's live pick; manual → the pinned choice.
-- Build adds `-framework SwiftUI`. Offline UI verification: `ImageRenderer` collapses `ScrollView`
-  content, so use real AppKit `NSHostingView.cacheDisplay` to snapshot the popover faithfully.
-
-## Measurement-driven correction (`!APP_STORE`, in progress)
-
-Why it exists: the genre path has a **hard ceiling** on this user's library, and the ceiling is
-structural, not a bug. Discogs-EffNet's 400 styles contain **no** Turkish, Anatolian,
-Azerbaijani, Caucasian or Middle-Eastern label (verified against `discogs_styles.txt`), so the
-classifier cannot name this material even in principle; its closest answers are `Folk` →
-`.acoustic` or `.world`, **both of which carry no delta at all**. Meanwhile the catalogs are
-either empty (MusicBrainz has one vote on Neşet Ertaş and no entry at all for many artists) or
-confidently wrong (Apple files the Azerbaijani xalq mahnısı "Evlərinin önü yonca" as **Pop**,
-with the artist name matching exactly, so the verification that rejects bad hits waves it
-through). A violinist with no catalog presence anywhere is unreachable by every naming path
-the app has. So: stop naming the music, and correct the recording instead.
-
-- `SpectrumMeasurement` — long-term average spectrum of the PRE-EQ tap, accumulated per artist
-  across sessions into `~/Library/Application Support/Eqlume/spectrum-measurements.json`.
-  8192-point FFT (5.9 Hz bins at 48 kHz) because at 2048 there are not enough bins inside one
-  ERB down at 50 Hz for the low end to be measurable. Sampled 4 s every 5 s. Only accumulates
-  while `audio.isRunning`, i.e. headphones in the jack.
-  **Stored on a 1/24-octave axis in HERTZ, never on FFT bins.** The first version accumulated
-  per bin and called `entries.removeAll()` whenever the output device changed sample rate, on
-  the correct observation that bin *k* is a different frequency at 44.1 kHz than at 48 kHz.
-  The reasoning was right and the consequence was indefensible: it silently destroyed ten days
-  of measurement the first time a device switched rate, and the test suite had frozen that
-  behaviour in as though it were a feature — the bug was tested, and passed. Bins are an
-  implementation detail; hertz are not. A rate change now costs a recomputed bin→cell mapping
-  and nothing else. The file also went from 10.7 MB to ~150 KB, and `save()` encodes off the
-  main thread — it runs while music plays and the UI has no reason to wait for it.
-- `AdaptiveCorrection` — turns that spectrum into at most 3 peaking bands. **No external
-  reference**, and that is the whole point: every documented failure mode of automatic spectral
-  matching (arbitrary reference choice, loudness dependence, heavy-handedness, song-specific
-  nonsense) comes from having one. Here the reference is the recording's own spectrum smoothed
-  over 3× the ear's ERB, and the anomaly is `ERB-smoothed − 3×ERB-smoothed`. Subtracting a
-  smoothed copy of a curve from itself cancels any common offset, so playback level provably
-  cannot influence the result (there is a test for this).
-
-  Four things were learned the hard way and each is now a named guard:
-  1. **One scale is not enough.** With the reference smoothed at exactly one ERB, a resonance
-     about one ERB wide cancels most of its own detection — a 7 dB synthetic resonance showed
-     up as 1.15 dB. Hence 1 ERB vs 3 ERB.
-  2. **Nearest-bin log resampling makes a staircase.** At 48 Hz several 1/24-octave cells fall
-     inside one FFT bin; every step of that staircase is curvature, and a band-pass operator
-     reports curvature as resonance. It invented filters at 48 and 78 Hz on a spectrum with
-     none. Cells with no bin of their own are interpolated.
-  3. **Zeroing the anomaly outside the band manufactures an edge.** The first surviving point
-     then reads as a peak against that step — a −3 dB filter at exactly the 100 Hz boundary.
-     The band restriction applies to candidate SELECTION only; the curve stays intact.
-  4. **Curvature in the tilt is not a resonance.** The knee where a recording's bass rolloff
-     begins produces a genuine broad lobe. It is rejected by width: an anomaly wider than 60 %
-     of the reference window is part of the timbre that window defines.
-
-  Bounds, all deliberate: cuts to −3 dB but boosts only to +1.5 (a notch does not ring, and
-  this app corrects by cutting); 0.2–1.5 octave bandwidth; ≥0.5 octave between filters; gain
-  traded away as a filter narrows (AutoEq's high-Q-high-gain penalty); detection band
-  100 Hz–10 kHz (below ~100 Hz the ERB is most of an octave, so resonance and timbre stop
-  being separable in principle); ≥2000 frames and ≥3 distinct titles before proposing
-  anything (a single voice's LTAS stabilises in 25–30 s, music is far less stationary).
-  Every proposal is verified against the biquad magnitude it will actually realise
-  (`FrequencyResponse`) and rejected if it does not reduce the anomaly.
-
-- **Deliberately NOT wired to the audio path yet.** The algorithm is validated against
-  synthetic spectra with known injected resonances (20 assertions: finds a 0.15-octave
-  resonance and a hiss shelf, ignores a 2-octave hump, a pure tilt and a steep rolloff, is
-  level-invariant, respects every bound). It has never been run on a real measurement, because
-  there was no data yet. Read the JSON first, review the proposals, then wire application.
+  Bounds: cuts to −3 dB, boosts only to +1.5 (a notch does not ring); 0.2–1.5 octave bandwidth;
+  ≥0.5 octave between filters; gain traded away as a filter narrows (AutoEq's high-Q/high-gain
+  penalty); detection band 100 Hz–10 kHz (below ~100 Hz the ERB is most of an octave, so resonance
+  and timbre stop being separable in principle); ≥2000 frames and ≥3 distinct titles before
+  proposing anything. Every proposal is checked against the biquad magnitude it will actually
+  realise and dropped if it does not reduce the anomaly.
+- **Status: validated on synthetic spectra only** (finds a 0.15-octave resonance and a hiss shelf;
+  ignores a 2-octave hump, a pure tilt and a steep rolloff; level-invariant). It has never run on a
+  real measurement. Read the JSON, review the proposals, *then* wire application.
 
 ## Startup: ready without being switched on
 
-The user's requirement is that the Mac comes up usable with nothing to do. Two halves:
-- **Login item registered once** on first launch (`Eqlume.didRegisterLoginItem`), so a later
-  deliberate "off" in the settings panel is not overridden on the next launch.
-- **Auto detection is forced ON at every launch**, not restored from the last session. This is
-  not tidiness: `selectPreset` turns auto off and persists it, and the popover shows exactly
-  one preset chip — so a single tap on the only chip in the UI permanently kills detection.
-  That happened, and detection was silently off for four days before anyone noticed. The
-  toggle still works within a session; it just no longer survives a restart.
+- **Login item registered once** (`Eqlume.didRegisterLoginItem`), so a later deliberate "off" in
+  the settings panel is not overridden on the next launch.
+- **Auto detection is forced ON at every launch**, not restored from the last session. Not
+  tidiness: `selectPreset` turns auto off and persists it, and the popover shows exactly one preset
+  chip — so one tap on the only chip in the interface permanently killed detection, and it stayed
+  off for four days unnoticed. The toggle still works for the session.
+
+## Permissions (one-time, user-granted)
+
+- **Audio Recording** — first EQ enable.
+- **Automation** → Spotify / Music / Chrome / Safari, for now-playing. Entitlement
+  `com.apple.security.automation.apple-events`; the settings panel has a test for it.
+- **Chrome**: View → Developer → "Allow JavaScript from Apple Events", for the YT Music DOM read.
+- **Spotify pre-fetch** (`!APP_STORE`): paste a Client ID from the developer dashboard, redirect
+  URI `http://127.0.0.1:38123/cb`, Premium account, tokens in Keychain.
+
+## Localization (`Localization.swift`)
+
+- Runtime language switch, English default. `Loc.shared` is a `@MainActor ObservableObject`;
+  `L` is a non-actor mirror for use off the main actor. Strings are inline — `loc.t("English",
+  "Türkçe")` — so there is no key table and no missing-key bugs.
+- **`EQPreset.name` is never localized.** It is load-bearing: theming matches on it, UserDefaults
+  persists it, pins store it. `displayName` is the localized label, for display only.
+- **Detection state is structured, not parsed.** The view localizes from `lastArtist/lastTitle/
+  lastSourceApp/lastSourceKind/lastStatus`. An earlier version parsed Turkish substrings out of the
+  rendered detection line and broke the moment those strings were translated.
+
+## UI (SwiftUI popover)
+
+Menu-bar icon → `NSPopover` hosting `PopoverView`; `StatusBarController` owns the model and pushes
+state into `EQViewModel`.
+
+- **Accent colour follows the active preset's family** (`PresetFamily.accent`) and animates on
+  change. A new preset needs a line in `Theme.family(forPresetName:)` or it has no accent.
+- **EQ curve** from `FrequencyResponse` (combined RBJ-biquad magnitude); **live spectrum** from
+  `SpectrumAnalyzer` (2048-pt, 40 log bands — distinct from `SpectrumMeasurement`'s 8192), driven
+  by a 30 fps timer only while the popover is open and EQ is running.
+- **Only ONE preset chip is shown** (`EQPreset.natural`). The other presets still exist and auto
+  still picks them; the manual grid was removed as clutter. Do not reintroduce it — but remember
+  that tapping the chip disables auto (see Startup).
+- **Pinning UI is an `NSAlert` + `NSPopUpButton`**, not a grid: a rare deliberate act should not
+  occupy screen space permanently.
+- **"Why this genre?"** (`!APP_STORE`) shows `lastDetection` — which source answered and, for the
+  classifier, its top Discogs style with confidence. That string was computed on every resolve and
+  read nowhere, so a wrong genre could only be diagnosed by re-deriving the whole chain by hand.
+  Markers: `♪` MusicBrainz, `♯` work title, `★` pinned, bare `[name]` iTunes, `[style · NN%]` the
+  classifier.
+- The settings panel is an inline button panel behind a `gearshape` toggle — **not** a SwiftUI
+  `Menu`, which renders unreliably inside a popover.
 
 ## Distribution — Mac App Store
 
-- **Live on the Mac App Store as "EqLume" 1.0, free, since 2026-07-29.** Verified via
-  `https://itunes.apple.com/lookup?id=6793070613`. Product page: `apps.apple.com/app/id6793070613`.
-  The store build is the `APP_STORE` flavor of build 4 (`build/Eqlume-1.0-build-4.pkg`, 2026-07-28).
-- **Two flavors, one source tree,** split by the `APP_STORE` compile flag (`#if !APP_STORE`).
-  The store build **omits** (i) the bundled Discogs-EffNet model — it is CC BY-NC-SA, i.e.
-  non-commercial, so shipping it in a store binary is the wrong license posture, and (ii) the
-  Spotify OAuth path, so no user-supplied Client ID / loopback listener is needed. Local/GitHub
-  builds keep both. `scripts/preflight-appstore.sh` asserts this by inspecting the built binary
-  (no bundled `.mlmodelc`, and no `38123` / `api.spotify.com` strings).
-- **Rejection lesson — Guideline 2.4.5(i), entitlements minimalism.** Build 3 was rejected because
-  `Eqlume.appstore.entitlements` carried `com.apple.security.network.server` (and a
-  `keychain-access-groups` entry) that the store flavor does not use — the loopback OAuth listener
-  and Keychain token storage only exist in the non-store build. Apple reads the *declared*
-  entitlements, not the code paths. Both were removed; the store entitlements are now app-sandbox,
-  `network.client`, `device.audio-input`, `automation.apple-events` (+ its temporary exception).
-  `build.sh` and `scripts/preflight-appstore.sh` both re-assert the forbidden ones are absent and
-  the required ones present, via `codesign -d --entitlements`, so this cannot regress silently.
-- `scripts/package-appstore.sh` reads `CFBundleShortVersionString` / `CFBundleVersion` out of
-  `Info.plist` for the `.pkg` name — do not hardcode the build number there again.
-- **Unreleased since 1.0** (in git, not in the store): the `EqLume` display-name rename, the
-  App Store badge/README work, and the Turkish-folk classification fix. A store submission would
-  need `CFBundleVersion` bumped past 4.
+- **Live as "EqLume" 1.0, free, since 2026-07-29** (`apps.apple.com/app/id6793070613`). The store
+  build is the `APP_STORE` flavor of build 4.
+- **Two flavors, one tree**, split by `#if !APP_STORE`. The store build omits (i) the Discogs-EffNet
+  model — CC BY-NC-SA is the wrong license posture for a store binary — and (ii) the Spotify OAuth
+  path. `scripts/preflight-appstore.sh` asserts both by inspecting the built binary.
+- **Rejection lesson — Guideline 2.4.5(i), entitlements minimalism.** Build 3 was rejected for
+  declaring `network.server` and `keychain-access-groups` that the store flavor does not use.
+  **Apple reads the declared entitlements, not the code paths.** `build.sh` and the preflight script
+  both re-assert this via `codesign -d --entitlements`, so it cannot regress silently.
+- `scripts/package-appstore.sh` reads the version out of `Info.plist` — do not hardcode it again.
+- **Everything since build 4 is unreleased**, which is now most of the detection work, pinning,
+  measurement and the startup behaviour. A submission needs `CFBundleVersion` > 4.
 
-## Discoverability / awesome-list submissions
+## Discoverability
 
-Marketing state, so it isn't re-litigated. Copy for every remaining channel is written and lives
-in the launch kit (Show HN, r/macapps, r/headphones, AlternativeTo, Product Hunt) — the user posts
-those himself; AlternativeTo blocks brand-new accounts for 7 days.
-
-- `serhii-londar/open-source-mac-os-apps` **#1243 — open**. No PR template in that repo. A
-  permanently "pending" commit status there is normal, not a failing check.
-- `jaywcjlove/awesome-mac` **#2500 — open**, FOSSA license check passed. No PR template either.
-- `iCHAIT/awesome-macOS` **#975 — closed**, replaced by **#993 (open)**. **The lesson:** that repo
-  has a mandatory PR template whose footer says a PR that replaces it wholesale "will be closed
-  without discussion", and its guidelines repeat it. #975 replaced the template with prose, so
-  maintainer `herrbischoff` closed it in a 5-PR sweep with no comment (#977/#975/#974/#971/#969) —
-  nothing was wrong with the diff. #993 re-submits the identical one-line entry with all seven
-  template items filled. Two further rules of that repo worth knowing: it rejects Electron apps,
-  and it rejects "AI prompt wrappers", while explicitly allowing *local, specialised ML models as
-  one step of a larger process* — which is exactly what the Discogs-EffNet classifier is, and #993
-  says so. Entry format follows the `Pasteboard Viewer` precedent: primary link → App Store, OSS
-  badge → GitHub repo, plus the Freeware badge, description ending in a period, placed
-  alphabetically between BackgroundMusic and Fader.
-- README carries the App Store badge, a demo GIF, an architecture diagram and a
-  "How it compares" table (vs eqMac / SoundSource / Boom 3D); `assets/social-preview.png` is a
-  1280×640 card meant for GitHub → Settings → Social preview.
+- `serhii-londar/open-source-mac-os-apps` **#1243 open** (a permanently "pending" commit status
+  there is normal). `jaywcjlove/awesome-mac` **#2500 open**.
+- `iCHAIT/awesome-macOS` — **abandoned by the user's decision, 2026-08-13**, after #975 and #993
+  were both closed with no comment inside multi-PR sweeps. Two things were learned there and are
+  worth keeping: that repo closes any PR that replaces its template wholesale, and its written rule
+  is that an open-source entry's **primary link goes to the app's website** (source repo if there is
+  no website), with the OSS badge on the source — #993 used the App Store as primary. The merges in
+  those same sweeps follow that rule exactly, so the sweeps are not blind.
+- **EqLume has no website of its own**, only a store listing and a repo, which is what closes the
+  door on that entry format. A project page would reopen it.
+- Remaining channels are the user's to post: Show HN, r/macapps, r/headphones, AlternativeTo
+  (blocks accounts younger than 7 days), Product Hunt.
 
 ## Status
 
-Functionally complete incl. genre-themed SwiftUI UI with live spectrum + EQ curve. All components
-validated. Shipping on the Mac App Store (above). Per-device opt-in shipped (see "Which outputs get
-EQ'd"): the 3.5mm jack always gets the Chu II correction, built-in speakers are never touched, and
-any other output can be opted in to `desktopSpeakerBaseline` — a class-typical 2.1-desk-speaker
-correction, **not** a measurement of the user's Logitech set, so it is meant to be trimmed by ear
-(bass thin → 80 Hz toward −1; treble harsh → 3 kHz toward +1.5). That ear-tuning pass has not been
-done yet.
-Open future ideas (not started): album-art in now-playing card, user master bass/mid/treble trim,
-a genuinely measured baseline for a specific speaker set, per-device profile choice (the opt-in
-list is currently one flat set — see the caveat under "Which outputs get EQ'd").
+Shipping on the Mac App Store. Functionally complete: process-tap audio path, per-device profiles,
+genre detection with pinning, themed popover with live spectrum and drawn curve.
+
+Not done, honestly:
+- The `desktopSpeakerBaseline` ear-tuning pass has never been made.
+- `AdaptiveCorrection` is unwired and unproven on real data.
+- Open ideas, not started: album art in the now-playing card, a user master bass/mid/treble trim,
+  a genuinely measured baseline for a specific speaker set, per-device profile choice.
