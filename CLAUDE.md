@@ -103,7 +103,23 @@ Per track, resolves a preset in this order:
    `K. 331` — single-letter catalogues require their period, a bare "d 2" is anything else), or on
    a classical form word TOGETHER WITH a movement number or a stated tonality. The tonality alone
    is not enough: "In A Major Way" is a soul album. Tag marker `♯` → source "eser adı / work title".
-3. **Catalog** (`resolveGenre`) — best source first:
+3. **Catalog** (`resolveGenre`) — best source first. It returns THREE outcomes, and the
+   distinction is load-bearing: `.resolved`, `.noData` (every source answered and none knew
+   the track), and `.unavailable` (a source we trust more could not be reached). On
+   `.unavailable` the chain does NOT fall through to a weaker source or retry with a mangled
+   artist name — it defers to audio analysis, which needs no network. Collapsing those two
+   into one optional is what turned a single unanswered request into a wrong curve: Andrea
+   Bocelli is `classical` 6 / `classical crossover` 3 / `pop` 2 in MusicBrainz, and one
+   timeout handed him to iTunes, which says Pop. `MusicBrainzService.get` also retries once
+   (and backs off on a 503), because resolving one track can now cost four requests through a
+   ≤1 req/s throttle — the album lookup doubled the exposure to a single slow answer.
+   `mapGenreToPreset` returns an OPTIONAL: an unrecognised genre string used to fall back to
+   `.pop`, which dresses a non-answer as a confident one, and pop is not neutral — it lifts
+   80 Hz. NB when editing it: pop was ONLY reachable through that fallback, so removing it
+   silently stopped plain "Pop" from mapping to anything until an explicit rule was added.
+   Known divergence, harmless so far: `mapGenreToPreset` checks EDM before pop (so "Dance
+   Pop" → EDM) while `genreKeywordRules` deliberately checks pop first (→ pop).
+
    - **MusicBrainz album votes** (`albumGenres`, tried first): the release group's own genre votes.
      Artist votes describe a career, which is wrong whenever one record departs from it — Tame
      Impala's artist votes are psychedelic rock 13 / alternative rock 5 / indie rock 3, so every

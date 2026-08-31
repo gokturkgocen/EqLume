@@ -19,6 +19,18 @@ actor MusicBrainzService {
 
     struct WeightedGenre { let name: String; let count: Int }
 
+    /// Three outcomes, not two. "No data" and "no answer" look identical to a caller that
+    /// only gets an optional back, and treating them the same is what turns a momentary
+    /// network hiccup into a wrong preset: the chain falls through to a source it considers
+    /// worse and commits to that answer. Andrea Bocelli is `classical` 6 / `classical
+    /// crossover` 3 / `pop` 2 here — MusicBrainz knew — but one unanswered request handed
+    /// the track to iTunes, which says Pop.
+    enum GenreLookup {
+        case genres([WeightedGenre])
+        case none          // the entity is known and carries no votes, or is genuinely absent
+        case unavailable   // the request failed; the answer is unknown, not empty
+    }
+
     private var cache: [String: [WeightedGenre]] = [:]        // artist(lower) → genres (cached miss = [])
     private var albumCache: [String: [WeightedGenre]] = [:]   // artist||title → album genres
     private var lastRequest = Date.distantPast
@@ -34,46 +46,46 @@ actor MusicBrainzService {
     /// album-level votes at all, and singles have no studio album to look at).
     ///
     /// Two requests (recording search → release-group detail), cached per artist+title.
-    func albumGenres(artist: String, title: String) async -> [WeightedGenre]? {
+    func albumGenres(artist: String, title: String) async -> GenreLookup {
         let key = "\(artist.lowercased())||\(title.lowercased())"
-        if let cached = albumCache[key] { return cached.isEmpty ? nil : cached }
+        if let cached = albumCache[key] { return cached.isEmpty ? .none : .genres(cached) }
         switch await searchStudioAlbumMBID(artist: artist, title: title) {
         case .failed:
-            return nil                         // transient — do not poison the cache
+            return .unavailable                // transient — do not poison the cache
         case .noMatch:
             albumCache[key] = []
-            return nil
+            return .none
         case .found(let mbid):
             // Genres only, no `tags` fallback: release-group tags are full of things that
             // are not genres at all ("plattentests.de", "offizielle charts", "5+ wochen").
             guard let genres = await fetchGenres(entity: "release-group", mbid: mbid,
-                                                 tagsFallback: false) else { return nil }
+                                                 tagsFallback: false) else { return .unavailable }
             albumCache[key] = genres
-            return genres.isEmpty ? nil : genres
+            return genres.isEmpty ? .none : .genres(genres)
         }
     }
 
     /// Count-weighted genres for `name`, highest count first. nil if the artist isn't found
     /// or has no genre votes → caller falls back to iTunes.
-    func artistGenres(name: String) async -> [WeightedGenre]? {
+    func artistGenres(name: String) async -> GenreLookup {
         let key = name.lowercased()
-        if let cached = cache[key] { return cached.isEmpty ? nil : cached }
+        if let cached = cache[key] { return cached.isEmpty ? .none : .genres(cached) }
         // IMPORTANT: only cache HTTP-200-backed outcomes. A transient failure (timeout /
         // 503 rate-limit) must NOT be cached as a permanent miss — otherwise a well-known
         // artist (e.g. Scorpions) gets stuck falling through to the audio classifier for the
         // rest of the session and is mislabeled (Scorpions → "World Music"). Retry next time.
         switch await searchArtistMBID(name: name) {
         case .failed:
-            return nil                    // transient — do not poison the cache
+            return .unavailable           // transient — do not poison the cache
         case .noMatch:
             cache[key] = []               // genuinely unknown artist — cache the miss
-            return nil
+            return .none
         case .found(let mbid):
             // request failed → don't cache
             guard let genres = await fetchGenres(entity: "artist", mbid: mbid,
-                                                 tagsFallback: true) else { return nil }
+                                                 tagsFallback: true) else { return .unavailable }
             cache[key] = genres           // 200-backed (possibly empty) → cache
-            return genres.isEmpty ? nil : genres
+            return genres.isEmpty ? .none : .genres(genres)
         }
     }
 
@@ -159,17 +171,31 @@ actor MusicBrainzService {
 
     /// Throttled GET (≤ ~1 req/s) with the required User-Agent. Returns nil on any non-200.
     private func get(_ url: URL) async -> Data? {
-        let since = Date().timeIntervalSince(lastRequest)
-        if since < 1.1 {
-            try? await Task.sleep(nanoseconds: UInt64((1.1 - since) * 1_000_000_000))
+        // Two attempts. Resolving one track can now cost four requests (album search, album
+        // detail, artist search, artist detail) and the throttle spaces them at least 1.1 s
+        // apart, so a burst of track changes queues up — a single miss used to be enough to
+        // hand the track to a worse source. The retry is cheap because the throttle already
+        // paces it, and a genuine 404 is not retried into: only a failure to get an answer.
+        for attempt in 0..<2 {
+            let since = Date().timeIntervalSince(lastRequest)
+            if since < 1.1 {
+                try? await Task.sleep(nanoseconds: UInt64((1.1 - since) * 1_000_000_000))
+            }
+            lastRequest = Date()
+            var req = URLRequest(url: url)
+            req.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
+            req.timeoutInterval = 8
+            guard let (data, resp) = try? await URLSession.shared.data(for: req),
+                  let http = resp as? HTTPURLResponse else {
+                continue                       // no answer at all — worth one more try
+            }
+            if http.statusCode == 200 { return data }
+            // 503 is MusicBrainz asking us to slow down; anything else is a real answer we
+            // simply cannot use, and retrying it would only burn the rate limit.
+            if http.statusCode != 503 { return nil }
+            if attempt == 0 { try? await Task.sleep(nanoseconds: 1_500_000_000) }
         }
-        lastRequest = Date()
-        var req = URLRequest(url: url)
-        req.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
-        req.timeoutInterval = 5
-        guard let (data, resp) = try? await URLSession.shared.data(for: req),
-              let http = resp as? HTTPURLResponse, http.statusCode == 200 else { return nil }
-        return data
+        return nil
     }
 
     private struct ArtistSearch: Decodable {

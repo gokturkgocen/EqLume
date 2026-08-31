@@ -160,8 +160,8 @@ final class AutoPresetSelector {
             return (.turkishFolk, "[\(L.t("folk artist", "halk sanatçısı"))]")
         }
         #endif
-        if let g = genreHint, !g.isEmpty {
-            return (mapGenreToPreset(g), "[\(g)]")
+        if let g = genreHint, !g.isEmpty, let preset = mapGenreToPreset(g) {
+            return (preset, "[\(g)]")
         }
         // 1. Classical works announce themselves in the title (see `looksLikeClassicalWork`).
         //    This runs BEFORE any lookup on purpose: on a classical upload the artist field
@@ -171,14 +171,25 @@ final class AutoPresetSelector {
             return (.classical, "[\(L.t("classical work", "klasik eser")) ♯]")
         }
         // 2. Resolve the reported (artist, title).
-        if let r = await resolveGenre(artist: artist, title: title) { return r }
+        switch await resolveGenre(artist: artist, title: title) {
+        case .resolved(let preset, let tag):
+            return (preset, tag)
+        case .unavailable:
+            // A source we trust could not be reached. Guessing from a weaker one, or
+            // re-querying with a mangled artist name, would both just be noise — hand the
+            // track to audio analysis, which needs no network and can say "I don't know".
+            return nil
+        case .noData:
+            break
+        }
         // 3. "Artist - Title" embedded in the title field. Common on YouTube / YT Music where
         //    a compilation/upload channel lands in the artist field (e.g. "NEA ZIXNH") and the
         //    real artist sits inside the title ("Gary Moore - Parisienne Walkways"). Split on
         //    the first dash and retry with the artist parsed from the title.
         if let (embArtist, embTitle) = Self.splitArtistTitle(title),
-           !artistNamesRoughlyMatch(embArtist, artist) {   // skip if it just repeats the artist
-            if let r = await resolveGenre(artist: embArtist, title: embTitle) { return r }
+           !artistNamesRoughlyMatch(embArtist, artist),   // skip if it just repeats the artist
+           case .resolved(let preset, let tag) = await resolveGenre(artist: embArtist, title: embTitle) {
+            return (preset, tag)
         }
         return nil
     }
@@ -191,19 +202,40 @@ final class AutoPresetSelector {
     ///   2. iTunes track lookup, verified against the artist name (fallback for artists
     ///      MusicBrainz doesn't cover).
     /// Returns nil if neither resolves confidently → caller defers to the audio classifier.
-    private func resolveGenre(artist: String, title: String) async -> (EQPreset, String)? {
+    /// What one (artist, title) lookup concluded.
+    enum GenreResolution {
+        case resolved(EQPreset, String)
+        /// Every source answered and none of them recognised the track.
+        case noData
+        /// A source we trust more than the others could not be reached. NOT the same thing:
+        /// committing to a weaker source here is how a momentary network failure becomes a
+        /// wrong curve for the whole play. Bocelli is `classical` 6 / `classical crossover` 3
+        /// in MusicBrainz, and one unanswered request handed him to iTunes, which says Pop.
+        case unavailable
+    }
+
+    private func resolveGenre(artist: String, title: String) async -> GenreResolution {
+        var trustedSourceFailed = false
+
         // Album votes before artist votes: they describe THIS record, where artist votes
         // describe a career. Tame Impala is psychedelic rock by career and dance/house on
         // "Deadbeat", and it is the record that should pick the curve. Album coverage is
         // thinner than artist coverage, so this is a preference, not a replacement.
-        if let genres = await musicBrainz.albumGenres(artist: artist, title: title),
-           let (preset, top) = Self.mapWeightedGenresToPreset(genres) {
-            return (preset, "[\(top) ♪]")
+        switch await musicBrainz.albumGenres(artist: artist, title: title) {
+        case .genres(let g):
+            if let (preset, top) = Self.mapWeightedGenresToPreset(g) { return .resolved(preset, "[\(top) ♪]") }
+        case .unavailable: trustedSourceFailed = true
+        case .none: break
         }
-        if let genres = await musicBrainz.artistGenres(name: artist),
-           let (preset, top) = Self.mapWeightedGenresToPreset(genres) {
-            return (preset, "[\(top) ♪]")
+        switch await musicBrainz.artistGenres(name: artist) {
+        case .genres(let g):
+            if let (preset, top) = Self.mapWeightedGenresToPreset(g) { return .resolved(preset, "[\(top) ♪]") }
+        case .unavailable: trustedSourceFailed = true
+        case .none: break
         }
+        // iTunes is the fallback for artists MusicBrainz does not cover — not a substitute
+        // for MusicBrainz having failed to answer.
+        if trustedSourceFailed { return .unavailable }
         if let hit = await genreLookup.lookup(artist: artist, title: title),
            artistNamesRoughlyMatch(hit.matchedArtist, artist) {
             #if !APP_STORE
@@ -212,12 +244,14 @@ final class AutoPresetSelector {
             let normalizedGenre = hit.genre.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             if normalizedGenre == "world" || normalizedGenre == "worldwide"
                 || normalizedGenre == "world music" {
-                return nil
+                return .noData
             }
             #endif
-            return (mapGenreToPreset(hit.genre), "[\(hit.genre)]")
+            if let preset = mapGenreToPreset(hit.genre) {
+                return .resolved(preset, "[\(hit.genre)]")
+            }
         }
-        return nil
+        return .noData
     }
 
     #if !APP_STORE
@@ -634,8 +668,11 @@ final class AutoPresetSelector {
         }
     }
 
-    private func mapGenreToPreset(_ genre: String?) -> EQPreset {
-        guard let raw = genre?.lowercased() else { return .pop }
+    /// Returns nil when the string matches no rule. It used to answer `.pop` for anything
+    /// unrecognised, which dressed a non-answer up as a confident one — and pop is not a
+    /// neutral choice, it lifts 80 Hz.
+    private func mapGenreToPreset(_ genre: String?) -> EQPreset? {
+        guard let raw = genre?.lowercased() else { return nil }
 
         // Trap / Phonk — extreme sub-bass, check before generic rap.
         if raw.contains("trap") || raw.contains("phonk")                     { return .trap }
@@ -722,7 +759,12 @@ final class AutoPresetSelector {
         if raw.contains("spoken") || raw.contains("audiobook")
             || raw.contains("podcast") || raw.contains("comedy")
             || raw.contains("speech") || raw.contains("children")            { return .voice }
-        return .pop
+        // Generic pop LAST. Every compound containing "pop" — k-pop, dream pop, bedroom pop,
+        // synth-pop — is claimed by a rule above, so reaching here means plain pop. This rule
+        // has to be explicit now: pop used to be the function's fallback return, so removing
+        // that fallback silently stopped "Pop" from mapping to anything at all.
+        if raw.contains("pop")                                               { return .pop }
+        return nil
     }
 
     /// Granular genre tags ("avant-garde metal", "dance pop", "instrumental rock", …) →
