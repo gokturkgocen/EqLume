@@ -415,9 +415,7 @@ final class AutoPresetSelector {
                 self.onStatusChange?()
                 return
             }
-            let result = await Task.detached(priority: .userInitiated) {
-                clf.classify(samples: samples, inputRate: rate, allowVoice: allowVoice)
-            }.value
+            let result = await clf.classify(samples: samples, inputRate: rate, allowVoice: allowVoice)
             guard !Task.isCancelled, self.lastTrackIdentity == identity else { return }
             #if !APP_STORE
             guard let r = result, r.isReliable else {

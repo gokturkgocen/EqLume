@@ -30,6 +30,9 @@ final class SpectrumAnalyzer {
     deinit { vDSP_destroy_fftsetup(fftSetup) }
 
     private func computeEdges(sampleRate: Double) {
+        // A zero rate would divide to infinity and `Int(infinity)` traps, taking the app with
+        // it. This runs on every output-device change, so it is worth the one line.
+        guard sampleRate > 0 else { return }
         let n = SpectrumAnalyzer.fftSize
         let nyquist = sampleRate / 2
         let fMin = 30.0, fMax = min(18000.0, nyquist)

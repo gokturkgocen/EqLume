@@ -1,4 +1,8 @@
-import AVFoundation
+// @preconcurrency: AVAudioConverter's input block is declared @Sendable but is called
+// SYNCHRONOUSLY, on the calling thread, during `convert(to:error:withInputFrom:)`. The buffer it
+// captures never crosses a thread. AVFAudio simply predates strict concurrency annotations, and
+// this states that rather than silencing a real race.
+@preconcurrency import AVFoundation
 import CoreML
 import Foundation
 
@@ -8,7 +12,13 @@ import Foundation
 /// Pipeline: arbitrary-rate mono audio -> resample to 16kHz -> mel patches ->
 /// CoreML -> 400 Discogs styles -> aggregated into one of our preset families.
 @available(macOS 14.2, *)
-final class GenreClassifier {
+/// An actor, not a class, for one reason: two classifications can overlap. `audioClassifyTask`
+/// is cancelled on a track change, but cancellation is cooperative and `classify` never checks
+/// it, so a superseded run continues to completion. That put two concurrent transforms on one
+/// shared `FFTSetup` — and Apple documents that a setup may be reused across calls without ever
+/// saying it is safe across threads. Serialising is also the cheaper answer on a fanless
+/// machine: the superseded run no longer competes for CPU with the one that replaced it.
+actor GenreClassifier {
     private let model: MLModel
     private let mel: MelSpectrogram
     private let styles: [String]            // 400 labels, "Parent---Style"
