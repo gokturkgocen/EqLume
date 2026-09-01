@@ -68,6 +68,7 @@ enum L {
 /// How the current track's preset was resolved — carried structurally so the view can
 /// localize the source label instead of sniffing substrings out of a rendered line.
 enum DetectionSourceKind {
+    case resolving     // the track is known; the catalog lookup is still running
     case pinned        // the user pinned this exact track ("★")
     case musicBrainz   // MusicBrainz artist genres ("♪")
     case workTitle     // the title itself named a classical work ("♯")
@@ -88,6 +89,7 @@ enum DetectionSourceKind {
     /// Localized label shown as the small "· <source>" suffix on the genre line.
     var label: String {
         switch self {
+        case .resolving:   return L.t("looking up…", "aranıyor…")
         case .pinned:      return L.t("pinned", "sabit")
         case .musicBrainz: return "MusicBrainz"
         case .workTitle:   return L.t("work title", "eser adı")

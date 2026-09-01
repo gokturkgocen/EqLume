@@ -497,16 +497,32 @@ final class AutoPresetSelector {
                 applyIfChanged(cached)
                 lastDetection = "\(prefix) [pre-fetch ✓] → \(cached.name)"
                 markResolved(app: app, artist: current.artist, title: current.title, kind: .prefetch)
-            } else if let (preset, tag) = await catalogPreset(artist: current.artist, title: current.title, genreHint: nil) {
-                applyIfChanged(preset)
-                lastDetection = "\(prefix) \(tag) → \(preset.name)"
-                markResolved(app: app, artist: current.artist, title: current.title,
-                             kind: DetectionSourceKind.forTag(tag))
             } else {
-                lastDetection = "\(prefix) [katalog yok · ses analizi…]"
-                markResolved(app: app, artist: current.artist, title: current.title, kind: .analyzing)
-                scheduleAudioClassification(identity: identity, displayPrefix: prefix,
-                                            allowVoice: false)   // YT Music is music only
+                // Show what is playing NOW. Resolving the curve means up to four MusicBrainz
+                // requests through a 1 req/s throttle, queued behind whatever the previous
+                // track's pre-fetch is still doing — several seconds, and the name and artwork
+                // have no reason to wait for any of it. The curve follows when it is ready.
+                markResolved(app: app, artist: current.artist, title: current.title, kind: .resolving)
+                lastDetection = "\(prefix) [aranıyor…]"
+                onStatusChange?()
+
+                let resolved = await catalogPreset(artist: current.artist, title: current.title,
+                                                   genreHint: nil)
+                // The track may have changed while we waited; a late answer must not be
+                // applied to whatever is playing now.
+                guard lastTrackIdentity == identity else { return true }
+
+                if let (preset, tag) = resolved {
+                    applyIfChanged(preset)
+                    lastDetection = "\(prefix) \(tag) → \(preset.name)"
+                    markResolved(app: app, artist: current.artist, title: current.title,
+                                 kind: DetectionSourceKind.forTag(tag))
+                } else {
+                    lastDetection = "\(prefix) [katalog yok · ses analizi…]"
+                    markResolved(app: app, artist: current.artist, title: current.title, kind: .analyzing)
+                    scheduleAudioClassification(identity: identity, displayPrefix: prefix,
+                                                allowVoice: false)   // YT Music is music only
+                }
             }
 
             // Pre-resolve the next track if we have it.
