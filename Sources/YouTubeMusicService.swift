@@ -163,11 +163,19 @@ enum YouTubeMusicService {
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
 
+        // `with timeout` is not optional here. AppleScript's default Apple Event timeout is
+        // SIXTY seconds (the log shows it counting down "remaining = 7200 ticks"), and
+        // `AppleScriptRunner` serialises every script on one queue — so a browser that is too
+        // busy to answer promptly does not just lose one read, it wedges every following read
+        // behind it. That is what made the popover sit on "Çalmıyor" while music was plainly
+        // playing: nothing was broken, the queue was stuck behind a busy Chrome. Failing fast
+        // costs one poll; the next tick a second later simply tries again.
         if browser.isChromium {
             return """
             tell application id "\(browser.bundleID)"
                 if it is not running then return ""
                 try
+                with timeout of 3 seconds
                     repeat with w in windows
                         repeat with t in tabs of w
                             if URL of t contains "music.youtube.com" then
@@ -175,6 +183,7 @@ enum YouTubeMusicService {
                             end if
                         end repeat
                     end repeat
+                end timeout
                 on error errMsg number errNum
                     return "ERROR: " & errMsg & " [" & errNum & "]"
                 end try
@@ -187,6 +196,7 @@ enum YouTubeMusicService {
             tell application "Safari"
                 if it is not running then return ""
                 try
+                with timeout of 3 seconds
                     repeat with w in windows
                         repeat with t in tabs of w
                             if URL of t contains "music.youtube.com" then
@@ -194,6 +204,7 @@ enum YouTubeMusicService {
                             end if
                         end repeat
                     end repeat
+                end timeout
                 on error errMsg number errNum
                     return "ERROR: " & errMsg & " [" & errNum & "]"
                 end try

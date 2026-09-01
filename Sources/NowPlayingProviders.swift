@@ -27,6 +27,7 @@ struct SpotifyProvider: NowPlayingProvider {
     func currentTrack() async -> NowPlayingTrack? {
         let script = """
         tell application id "com.spotify.client"
+            with timeout of 3 seconds
             if it is running then
                 if player state is playing then
                     set t to name of current track
@@ -34,6 +35,7 @@ struct SpotifyProvider: NowPlayingProvider {
                     return t & "‹|›" & a
                 end if
             end if
+            end timeout
             return ""
         end tell
         """
@@ -55,6 +57,7 @@ struct MusicProvider: NowPlayingProvider {
     func currentTrack() async -> NowPlayingTrack? {
         let script = """
         tell application id "com.apple.Music"
+            with timeout of 3 seconds
             if it is running then
                 if player state is playing then
                     set t to name of current track
@@ -63,6 +66,7 @@ struct MusicProvider: NowPlayingProvider {
                     return t & "‹|›" & a & "‹|›" & g
                 end if
             end if
+            end timeout
             return ""
         end tell
         """
@@ -94,6 +98,7 @@ private func readBrowserTabTitle(bundleID: String, appName: String, useURLPredic
         tell application id "\(bundleID)"
             if it is not running then return ""
             try
+                with timeout of 3 seconds
                 set foundURL to ""
                 set foundTitle to ""
                 -- First try the active tab
@@ -113,6 +118,7 @@ private func readBrowserTabTitle(bundleID: String, appName: String, useURLPredic
                         end if
                     end repeat
                 end repeat
+                end timeout
             on error
                 return ""
             end try
@@ -125,6 +131,7 @@ private func readBrowserTabTitle(bundleID: String, appName: String, useURLPredic
         tell application "\(appName)"
             if it is not running then return ""
             try
+                with timeout of 3 seconds
                 if (count of windows) > 0 then
                     set u to URL of current tab of front window
                     set n to name of current tab of front window
@@ -140,6 +147,7 @@ private func readBrowserTabTitle(bundleID: String, appName: String, useURLPredic
                         end if
                     end repeat
                 end repeat
+                end timeout
             on error
                 return ""
             end try
